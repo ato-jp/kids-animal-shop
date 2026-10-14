@@ -1,7 +1,7 @@
 // オフライン用の控え。入れたときに files.json（build_site.sh が作る全ファイルの一覧）を全部控える。
 // 以後はまず控えから出して速く起動し、裏でネットから取り直して控えを新しくする。
 // そのため、公開し直した内容が効くのは「次にアプリを開いたとき」。
-const CACHE = "kas-v2";
+const CACHE = "kas-v3";
 
 self.addEventListener("install", e => {
   e.waitUntil((async () => {
