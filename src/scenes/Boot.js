@@ -4,6 +4,7 @@ export const EMOJI_KEYS = [
   "hamster", "rabbit", "dog", "cat", "penguin", "lion", "tropical", "fish", "blowfish", "dolphin",
   "sunflower", "carrot", "bone", "canned", "meat", "shrimp", "soap", "broom", "kuri", "star", "heart",
   "sparkles", "bubbles", "zzz", "moon", "truck", "ship", "farmer", "pole", "japan", "back", "plus", "gear",
+  "elephant", "leafy", "fork", "water", "sick", "vet", "coin", "cart", "book", "house", "ice", "park", "hammer", "sun", "chart", "no",
 ];
 
 export class Boot extends Phaser.Scene {

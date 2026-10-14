@@ -1,6 +1,6 @@
 // 「だれの おみせ？」字が読めなくても、自分の動物と色で選べる。
 import { store } from "../store.js";
-import { addKid } from "../logic/state.js";
+import { addKid, dayOver } from "../logic/state.js";
 import { isNight } from "../logic/playclock.js";
 import { W, H, text, img, button, parentGate } from "../ui/kit.js";
 import { openParent } from "../parent.js";
@@ -58,6 +58,6 @@ export class Who extends Phaser.Scene {
     sfx.pop();
     store.family.current = id;
     store.persist();
-    this.scene.start(isNight(store.shop, store.today()) ? "Night" : "Shop");
+    this.scene.start(isNight(store.shop, store.today()) ? "Night" : dayOver(store.shop) ? "Report" : "Shop");
   }
 }

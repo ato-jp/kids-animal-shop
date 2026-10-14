@@ -18,7 +18,7 @@ export class Night extends Phaser.Scene {
     text(this, W / 2, 140, "おやすみなさい", 72, "#fff6cf");
     text(this, W / 2, 230, "また あした ね", 44, "#fff6cf");
 
-    const pets = store.shop ? store.shop.slots.filter(Boolean) : [];
+    const pets = store.shop ? store.shop.rooms.map(r => r.animal).filter(Boolean) : [];
     const gap = 180, x0 = W / 2 - ((pets.length - 1) * gap) / 2;
     pets.forEach((a, i) => {
       const x = x0 + i * gap, y = 520;

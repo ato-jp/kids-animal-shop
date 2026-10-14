@@ -63,14 +63,14 @@ export class Scoop extends Phaser.Scene {
     for (const f of this.fishes) { const d = Math.hypot(f.s.x - p.x, f.s.y - p.y); if (d < bd) { bd = d; best = f; } }
     if (!best) { sfx.splash(); return; }
     this.fishes = this.fishes.filter(f => f !== best);
-    const { shop, slot } = catchFish(store.shop, best.key);
+    const { shop, room } = catchFish(store.shop, best.key);
     store.setShop(shop);
     this.caught += 1;
     sfx.splash();
     burst(this, best.s.x, best.s.y, "sparkles", 6, 40, 80);
     const bx = 1080 + (this.caught - 1) * 60;
     this.tweens.add({ targets: best.s, x: bx, y: 585, scale: best.s.scale * 0.5, duration: 700, ease: "Cubic.easeInOut", onComplete: () => { best.s.setDepth(45); sfx.star(); } });
-    if (slot < 0) floatText(this, 1140, 500, "おみせが いっぱい！ どんぐり +1");
+    if (room < 0) floatText(this, 1000, 500, "すいそうが いっぱい！ ほかの おみせに 50えんで うったよ");
     if (this.caught >= PER_VISIT) {
       this.done = true;
       this.time.delayedCall(900, () => text(this, W / 2, H / 2 - 40, "おみせに つれて かえろう！", 56, "#ffffff", { stroke: "#ff7a59", strokeThickness: 12 }).setDepth(90));

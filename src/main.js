@@ -7,6 +7,8 @@ import { MapScene } from "./scenes/Map.js";
 import { Scoop } from "./scenes/Scoop.js";
 import { Night } from "./scenes/Night.js";
 import { Clock } from "./scenes/Clock.js";
+import { Report } from "./scenes/Report.js";
+import { Zukan } from "./scenes/Zukan.js";
 import { W, H } from "./ui/kit.js";
 
 export const game = new Phaser.Game({
@@ -16,7 +18,7 @@ export const game = new Phaser.Game({
   banner: false,
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: W, height: H },
   input: { activePointers: 2 },
-  scene: [Boot, Who, Shop, Departure, MapScene, Scoop, Night, Clock],
+  scene: [Boot, Who, Shop, Departure, MapScene, Scoop, Zukan, Report, Night, Clock],
 });
 
 // 全画面表示。ブラウザは「人が触ったとき」にしか全画面を許さないので、タッチのたびに

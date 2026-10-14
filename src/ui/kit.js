@@ -34,11 +34,13 @@ export function burst(scene, x, y, key = "heart", n = 6, px = 44, dist = 90) {
   }
 }
 
-export function kuriCounter(scene, x, y) {
-  const bg = scene.add.graphics().fillStyle(0xffffff, 0.9).fillRoundedRect(x - 10, y - 38, 170, 76, 38);
-  const icon = img(scene, x + 34, y, "kuri", 60);
-  const t = text(scene, x + 110, y + 2, "0", 44, "#7a4a1e").setOrigin(0.5);
-  return { bg, icon, t, set(n) { t.setText(String(n)); }, pos: { x: x + 34, y } };
+export const yen = n => n.toLocaleString("ja-JP") + "えん";
+
+export function moneyCounter(scene, x, y) {
+  scene.add.graphics().fillStyle(0xffffff, 0.92).fillRoundedRect(x - 10, y - 34, 230, 68, 34);
+  const icon = img(scene, x + 30, y, "coin", 52);
+  const t = text(scene, x + 62, y + 2, "", 34, "#7a4a1e").setOrigin(0, 0.5);
+  return { icon, t, set(n) { t.setText(yen(n)); }, pos: { x: x + 30, y } };
 }
 
 // おとなの入口。歯車を3秒長押しすると開く（子どもがうっかり開かないため）

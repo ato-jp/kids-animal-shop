@@ -77,5 +77,5 @@ export function openParent(scene) {
   el.hidden = false;
 }
 
-export const PLAY_SCENES = ["Shop", "Departure", "Map", "Scoop"];
-export function stopPlay(scene) { for (const k of [...PLAY_SCENES, "Night"]) if (k !== scene.scene.key && scene.scene.isActive(k)) scene.scene.stop(k); }
+export const PLAY_SCENES = ["Shop", "Departure", "Map", "Scoop", "Zukan"];
+export function stopPlay(scene) { for (const k of [...PLAY_SCENES, "Night", "Report"]) if (k !== scene.scene.key && scene.scene.isActive(k)) scene.scene.stop(k); }

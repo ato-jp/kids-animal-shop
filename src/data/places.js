@@ -5,7 +5,7 @@ export const PLACES = {
   kanto: { name: "かんとう どうぶつえん", kind: "zoo", x: 0.67, y: 0.60 },
   chubu: { name: "ちゅうぶ すいぞくかん", kind: "aqua", x: 0.55, y: 0.52 },
   kinki: { name: "きんき どうぶつえん", kind: "zoo", x: 0.45, y: 0.68 },
-  chugoku: { name: "ちゅうごく・しこく すいぞくかん", kind: "aqua", x: 0.32, y: 0.62 },
+  chugoku: { name: "ちゅうごく・しこく すいぞくかん", kind: "aqua", x: 0.35, y: 0.6 },
   kyushu: { name: "きゅうしゅう どうぶつえん", kind: "zoo", x: 0.21, y: 0.74 },
   okinawa: { name: "おきなわ すいぞくかん", kind: "aqua", x: 0.11, y: 0.88 },
 };

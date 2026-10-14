@@ -2,7 +2,7 @@
 // 動物のおなかを減らし、夕方には空を染め、時間が来たら夜の画面へ切り替える。
 // Phaser の時計はタブが裏に回ると止まるので、見えていない間は数えない。
 import { store } from "../store.js";
-import { tick } from "../logic/state.js";
+import { tick, dayOver } from "../logic/state.js";
 import { addPlayed, isNight, isEvening } from "../logic/playclock.js";
 import { PLAY_SCENES } from "../parent.js";
 import { W, H } from "../ui/kit.js";
@@ -26,6 +26,11 @@ export class Clock extends Phaser.Scene {
       this.shade.setAlpha(0);
       sfx.sleep();
       this.scene.launch("Night");
+    } else if (dayOver(store.shop)) {
+      // お店の1日（9じ〜18じ）が終わった：閉店して売上報告へ
+      playing.forEach(k => this.scene.stop(k));
+      this.shade.setAlpha(0);
+      this.scene.launch("Report");
     }
   }
 }
