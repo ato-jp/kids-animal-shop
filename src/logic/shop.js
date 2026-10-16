@@ -8,7 +8,7 @@ import { AQUATIC } from "../data/aquatic.js";
 import { FOODS, AQUATIC_FOOD } from "../data/foods.js";
 import { PENS, MAX_LEVEL, FOOTPRINT, GENKI_DOWN_RATE, GENKI_UP_RATE, CAPACITY, SHOP_SIZES } from "../data/pens.js";
 import { FURNITURE } from "../data/furniture.js";
-import { zooDay, EXHIBITS } from "./zoo.js";
+import { zooDay, EXHIBITS, allExhibits, ensureFacilities } from "./zoo.js";
 import { DECOR, DEFAULT_DECOR, VISITOR_SPEND } from "../data/decor.js";
 import { SHINES, SHINE_IDS } from "../data/shine.js";
 import { marketRate } from "./rate.js";
@@ -86,7 +86,8 @@ export function newShop(now, rng = Math.random) {
     yesterday: null,
   };
   // 最初の1匹：大人になりかけのハムスター（ゲームで生後1か月ほど）
-  return putAnimal(shop, 0, "hamster", now - (1 / 12) * (4 / 12) * 365.25 * 24 * HOUR, rng);
+  // どうぶつえん・すいぞくかんは 最初から（おんぼろ。logic/zoo.js）
+  return ensureFacilities(putAnimal(shop, 0, "hamster", now - (1 / 12) * (4 / 12) * 365.25 * 24 * HOUR, rng));
 }
 
 function putAnimal(shop, penIdx, kind, born, rng = Math.random, arrived = born, shine) {
@@ -190,8 +191,7 @@ export function setTier(shop, penId, tier) {
 // 色は 血統くじ（logic/breed.js）、キラキラは 親がキラキラなら2倍。売りたい子は お店へ つれて行って 売る
 export const BREED_CHANCE = 0.3;
 function breedDay(s, next, dayIdx) {
-  if (!s.zoo) return;
-  for (const ex of s.zoo.exhibits) {
+  for (const ex of allExhibits(s)) {
     if (ex.breed === false) continue;
     const cap = EXHIBITS[ex.type].cap, used = () => ex.animals.reduce((t, a) => t + species(a.kind).space, 0);
     const ok = ex.animals.filter(a => BREEDS[a.kind] && !a.sick && a.genki >= 0.5 && stage(a, next) === "adult");
@@ -466,6 +466,7 @@ export function advance(shop, now) {
         pen.animals = keep;
       }
       zooDay(s, next); // 第3弾：じぶんの どうぶつえん（logic/zoo.js）
+      s.history = [...(s.history || []), s.today].slice(-7); // おとなの「あそびの きろく」（1しゅうかん。端末の中だけ）
       s.yesterday = s.today;
       s.today = { date: dateKey(next), care: 0, sold: 0, income: 0, expense: 0, fish: 0, visitors: 0 };
     }

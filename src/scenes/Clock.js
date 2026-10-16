@@ -9,6 +9,7 @@ import { bgm } from "../sound/bgm.js";
 export class Clock extends Phaser.Scene {
   constructor() { super("Clock"); }
   create() {
+    this.sec = 0;
     this.time.addEvent({ delay: 1000, loop: true, callback: () => this.second() });
     this.pollWeather();
     this.time.addEvent({ delay: 10 * 60 * 1000, loop: true, callback: () => this.pollWeather() });
@@ -20,6 +21,12 @@ export class Clock extends Phaser.Scene {
   }
   second() {
     if (!store.kid || store.paused) return;
+    // あそんだ時間：画面が見えている あいだ 60秒ごとに 1分（おとなの「あそびの きろく」）
+    if (document.visibilityState === "visible" && ++this.sec >= 60) {
+      this.sec = 0;
+      const s = store.shop;
+      store.setShop({ ...s, today: { ...s.today, play: (s.today.play || 0) + 1 } });
+    }
     const now = Date.now();
     const before = store.shop;
     const after = store.tick(now);

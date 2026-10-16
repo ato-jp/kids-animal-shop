@@ -3,6 +3,7 @@
 // 版の歴史：1＝4〜6歳向け／2＝お金と部屋（公開した）／3＝柵のレベル（公開していない）／4＝第1弾（現実の時計）
 import { newPen } from "./legacy.js";
 import { newAnimal, newShop, START_MONEY, ensureStarterTank } from "./shop.js";
+import { ensureFacilities } from "./zoo.js";
 import { ANIMALS } from "../data/animals.js";
 import { AQUATIC } from "../data/aquatic.js";
 import { PLACES } from "../data/places.js";
@@ -124,7 +125,7 @@ export function parse(raw, now = Date.now()) {
   if (!raw) return { family: newFamily(), broken: null };
   try {
     const family = migrate(JSON.parse(raw), now);
-    for (const k of Object.values(family.kids)) k.shop = ensureStarterTank(k.shop); // 2026-10-16：水槽がないと釣りに行けなくなったため
+    for (const k of Object.values(family.kids)) k.shop = ensureFacilities(ensureStarterTank(k.shop)); // 2026-10-16：水槽がないと釣りに行けなくなった／どうぶつえん・すいぞくかんは最初から
     return { family, broken: null };
   }
   catch (e) { return { family: newFamily(), broken: raw }; }

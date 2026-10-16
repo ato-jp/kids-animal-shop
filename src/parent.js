@@ -33,6 +33,13 @@ export function shrink(file) {
   });
 }
 
+// 子ごとの 1しゅうかんの きろく（shop.history と きょう）。あそんだ分・おせわ・つった数・もうけ
+function playLog(k) {
+  const days = [...(k.shop.history || []), k.shop.today].slice(-8);
+  const row = d => `<tr><td>${esc(String(d.date).slice(5).replace("-", "/"))}</td><td>${d.play || 0}ぷん</td><td>${d.care || 0}</td><td>${d.fish || 0}</td><td>${(d.income || 0) - (d.expense || 0)}</td></tr>`;
+  return `<div class="p-log"><b>${esc(k.name || "(なまえ なし)")}</b><table><tr><th>ひ</th><th>あそんだ</th><th>おせわ</th><th>つり</th><th>もうけ</th></tr>${days.map(row).join("")}</table></div>`;
+}
+
 export function openParent(scene) {
   const el = document.getElementById("parent");
   store.paused = true;
@@ -60,6 +67,10 @@ export function openParent(scene) {
           <label class="p-check"><input type="checkbox" id="p-sound" ${store.family.settings.sound ? "checked" : ""}> こうかおん</label>
           <label class="p-check"><input type="checkbox" id="p-bgm" ${store.family.settings.bgm ? "checked" : ""}> おんがく</label>
           <ul class="p-kids">${Object.entries(store.family.kids).map(([id, k]) => `<li><img src="${k.photo || `assets/emoji/${k.icon}.png`}" alt=""> ${esc(k.name || "(なまえ なし)")} <button type="button" data-del="${id}">けす</button></li>`).join("")}</ul>
+        </section>
+        <section>
+          <h3>あそびの きろく（1しゅうかん）</h3>
+          ${Object.values(store.family.kids).map(k => playLog(k)).join("")}
         </section>
         <section>
           <h3>きろくの ひかえ</h3>

@@ -13,7 +13,7 @@ import { townOf, townSpec, isBuilding, moveTownItem, buyTownDecor, removeTownDec
 import { TOWN_TILE as T, TOWN_TOP, TOWN_COLS, TOWN_ROWS, TOWN_DECOR } from "../data/town.js";
 import { SHINES } from "../data/shine.js";
 import { MORPHS } from "../data/morphs.js";
-import { openZoo, ZOO_LEVEL, ZOO_LAND_COST } from "../logic/zoo.js";
+import { LEVELS } from "../logic/zoo.js";
 import { prizeReady } from "../logic/prize.js";
 import { eventOn, presentReady, takePresent } from "../logic/events.js";
 import { sfx } from "../sound/sfx.js";
@@ -195,30 +195,15 @@ export class Town extends Phaser.Scene {
       if (this.edit) { if (!isBuilding(it.kind)) this.decorItemMenu(it); return; }
       if (!isBuilding(it.kind)) return;
       sfx.pop();
-      if (sp.to === "buyZoo") this.zooMenu();
-      else if (sp.to) this.scene.start(sp.to); else floatText(this, x0 + w / 2, y0, sp.lockedMsg, "#a0522d");
+      if (sp.to) this.scene.start(sp.to, sp.data); else floatText(this, x0 + w / 2, y0, sp.lockedMsg, "#a0522d");
     });
   }
 
-  // どうぶつえんの とち：開いていれば 入れる／お店レベルが足りれば 買える／足りなければ あと何が要るか
+  // どうぶつえん・すいぞくかん：名前に いまの だんかい（おんぼろ → おおきな）
   specOf(kind) {
-    const sp = townSpec(kind), shop = store.shop;
-    if (kind !== "zoo") return sp;
-    if (shop.zoo) return { ...sp, name: "どうぶつえん", to: "Zoo" };
-    if (shopLevel(shop) >= ZOO_LEVEL) return { ...sp, to: "buyZoo" };
-    return { ...sp, lockedMsg: `おみせ レベル${ZOO_LEVEL}で かえるよ（いま ${shopLevel(shop)}）` };
-  }
-
-  zooMenu() {
-    const P = panel(this, "どうぶつえんの とちを かう？", { w: 820, h: 440 });
-    P.L.add([creature(this, W / 2 - 70, P.top + 170, "penguin", 110), creature(this, W / 2 + 70, P.top + 170, "penguin", 110)]);
-    P.L.add(text(this, W / 2, P.top + 270, "ひらいた ひに すいぞくかんから ペンギンが 2わ やってくるよ", 20, "#4a2c17"));
-    card(this, P.L, W / 2, P.top + 350, 340, 64, () => {
-      const r = openZoo(store.shop, Date.now());
-      if (!r.ok) { sfx.no(); floatText(this, W / 2, P.top + 300, r.why === "nomoney" ? "おかねが たりないよ" : "できないよ", "#a0522d"); return; }
-      store.setShop(r.shop); sfx.coin(); P.close(); this.scene.start("Zoo");
-    }, 0xffe28a);
-    P.L.add(text(this, W / 2, P.top + 350, `${coin(ZOO_LAND_COST)}で かう`, 24, "#7a4a1e"));
+    const sp = townSpec(kind), fac = store.shop[kind];
+    if ((kind === "zoo" || kind === "aqua") && fac) return { ...sp, name: `${LEVELS[fac.level].name} ${sp.name}` };
+    return sp;
   }
 
   // はじめての案内（お店レベル0の あいだ）：お世話 → つり → うる の順に、することを1つだけ 指で示す
@@ -227,8 +212,7 @@ export class Town extends Phaser.Scene {
     const town = townOf(shop), at = kind => { const it = town.items.find(i => i.kind === kind), sp = townSpec(kind); return [it.x * T + (sp.w * T) / 2, TOWN_TOP + it.y * T + (sp.h * T) / 2]; };
     if (this.edit || store.visitFrom) { guide(this, null); return; }
     let target = null;
-    if (this.badge("zoo")) target = ["zoo", "どうぶつえんが かえるよ"]; // お店レベル2に なった日から
-    else if (shopLevel(shop) >= 1) { guide(this, null); return; }
+    if (shopLevel(shop) >= 1) { guide(this, null); return; }
     else if (this.badge("shop")) target = ["shop", "おせわを しよう"];
     else if (!shop.fishCount) target = ["fishing", "つりに いこう"];
     else if (!shop.pens.some(p => p.purpose === "sale") && !(shop.earned > 100)) target = ["shop", "うる こを きめよう"];
@@ -243,7 +227,7 @@ export class Town extends Phaser.Scene {
     if (kind === "shop") return all.some(([a, p]) => needs(a, p).length > 0);
     if (kind === "vet") return all.some(([a]) => a.sick && !a.hospitalUntil);
     if (kind === "station") return shop.gifts.length > 0;
-    if (kind === "zoo") return !shop.zoo && shopLevel(shop) >= ZOO_LEVEL;
+    if (kind === "aqua") return (shop.aqua?.gifts || []).length > 0;
     if (kind === "zukan") return prizeReady(store.family, store.family.current);
     if (kind === "board") return boardFor(now).some(r => canFulfill(store.family, store.family.current, r, now) === "ok");
     return false;
@@ -258,6 +242,10 @@ export class Town extends Phaser.Scene {
       this.layer.push(b);
     }
     if (it.kind === "shop") c.add(kidFace(this, w - 26, 20, store.family.current, store.kid, 46));
+    const fac = (it.kind === "zoo" || it.kind === "aqua") && store.shop[it.kind];
+    if (fac && fac.level < 2) for (const im of c.list) if (im.type === "Image" && im.enableFilters) { // おんぼろ・ちいさな は 古びた色
+      im.enableFilters(); const cm = im.filters.internal.addColorMatrix().colorMatrix; cm.sepia(); cm.saturate(fac.level ? -0.2 : -0.45, true);
+    }
     if (!sp.to) c.setAlpha(0.7);
     const tag = this.tag(x0 + w / 2, y0 + h - 4, sp.icon, sp.name);
     if (!sp.to) tag.setAlpha(0.75);

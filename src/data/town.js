@@ -10,7 +10,8 @@ export const TOWN_BUILDINGS = {
   market: { name: "いちば", icon: "cart", to: "Market", w: 3, h: 3 },
   station: { name: "えき", icon: "truck", to: "Station", w: 3, h: 3 },
   vet: { name: "じゅういさん", icon: "vet", to: "Vet", w: 3, h: 3 },
-  zoo: { name: "どうぶつえんの とち", icon: "park", to: null, lockedMsg: "おみせが もっと そだったら かえるよ", w: 3, h: 3 },
+  zoo: { name: "どうぶつえん", icon: "lion", to: "Zoo", data: { f: "zoo" }, w: 3, h: 3 }, // 最初から（おんぼろ。logic/zoo.js）
+  aqua: { name: "すいぞくかん", icon: "dolphin", to: "Zoo", data: { f: "aqua" }, w: 3, h: 3 },
   fishing: { name: "つりば", icon: "pole", to: "Spots", w: 3, h: 3 },
   zukan: { name: "ずかん", icon: "book", to: "Zukan", w: 3, h: 3 },
   board: { name: "けいじばん", icon: "chart", to: "Board", w: 2, h: 2 },
@@ -56,6 +57,6 @@ export const TOWN_APPEAL_MAX = 5;
 export const TOWN_DEFAULT = [
   ["market", 0, 0], ["station", 4, 0], ["shop", 8, 0], ["vet", 13, 0], ["zoo", 17, 0],
   ...Array.from({ length: 20 }, (_, x) => ["road", x, 3]),
-  ["fishing", 0, 4], ["zukan", 4, 4], ["board", 9, 4], ["farm", 16, 4],
+  ["fishing", 0, 4], ["zukan", 4, 4], ["board", 9, 4], ["aqua", 12, 4], ["farm", 16, 4],
   ["tree", 3, 7], ["tree", 11, 7], ["tree", 19, 8], ["flower", 7, 7], ["flower", 8, 7], ["rock", 15, 8],
 ];

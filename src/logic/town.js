@@ -11,9 +11,18 @@ export function defaultTown() {
 }
 // 前の版の記録には町がない／並びが古いときは はじめの ならび（2026-10-16 見下ろしに作り直した。古い並びは 半日しか使っていない）
 // 「となりまち」の看板は 2026-10-16 に なくした（せんろ で えき から行く）。前の記録に残っていたら のぞく
+// あとから ふえた建物（2026-10-16 すいぞくかん）は、前の町の ならびを こわさず あいている所に足す（はじめの場所が あいていれば そこ）
 export const townOf = shop => {
-  const t = shop.town && shop.town.version === TOWN_VERSION ? shop.town : defaultTown();
-  return t.items.some(i => !townSpec(i.kind)) ? { ...t, items: t.items.filter(i => townSpec(i.kind)) } : t;
+  let t = shop.town && shop.town.version === TOWN_VERSION ? shop.town : defaultTown();
+  if (t.items.some(i => !townSpec(i.kind))) t = { ...t, items: t.items.filter(i => townSpec(i.kind)) };
+  for (const kind of Object.keys(TOWN_BUILDINGS)) {
+    if (t.items.some(i => i.kind === kind)) continue;
+    const sp = TOWN_BUILDINGS[kind], def = TOWN_DEFAULT.find(d => d[0] === kind);
+    const spots = [...(def ? [[def[1], def[2]]] : []), ...Array.from({ length: TOWN_COLS * TOWN_ROWS }, (_, k) => [k % TOWN_COLS, Math.floor(k / TOWN_COLS)])];
+    const at = spots.find(([x, y]) => canPlaceTown(t, x, y, sp.w, sp.h));
+    if (at) t = { ...t, items: [...t.items, { id: "b_" + kind, kind, x: at[0], y: at[1] }] };
+  }
+  return t;
 };
 
 // せんろ が えき から 町のはし（左か右）まで つながっているか。えき に となりあう せんろ から、となりあう せんろ を たどる
