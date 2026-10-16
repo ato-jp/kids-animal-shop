@@ -76,7 +76,9 @@ export class Zoo extends Phaser.Scene {
     this.ground(g, ex.type, x, y);
     ex.animals.slice(0, 5).forEach((a, i) => {
       const px = ex.animals.length > 3 ? 70 : 100, cx = x + 60 + ((i * 97) % (SW - 120)), cy = y + 60 + ((i * 53) % (h - 110));
-      const c = creature(this, cx, cy, a.kind, px, S.shineOf(a), S.paintOf(a));
+      const st = S.stage(a, Date.now()), grow = st === "baby" ? 0.6 : st === "young" ? 0.8 : 1; // 赤ちゃんは 小さく
+      const c = creature(this, cx, cy, a.kind, px * grow, S.shineOf(a), S.paintOf(a));
+      if (st === "baby") this.tweens.add({ targets: text(this, cx + 22, cy - 30, "🍼", 18), x: cx + 22 + (water ? 70 : 30) * (i % 2 ? -1 : 1), y: cy - 30 + (water ? 10 : 6), duration: (water ? 3000 : 2200) + i * 300, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
       this.tweens.add({ targets: c, x: cx + (water ? 70 : 30) * (i % 2 ? -1 : 1), y: cy + (water ? 10 : 6), duration: (water ? 3000 : 2200) + i * 300, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
     });
     const kind = ex.animals[0]?.kind;

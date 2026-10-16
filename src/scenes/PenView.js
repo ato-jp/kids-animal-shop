@@ -47,12 +47,13 @@ export class PenView extends Phaser.Scene {
       text(this, W - 70, H - 18, "もどる", 17, "#ffffff", { stroke: "#00000080", strokeThickness: 4 }).setDepth(101);
     } else this.makeBar(p);
     this.input.on("pointerup", (ptr, over) => {
-      if (this.readonly || over.length || ptr.y < TOP || ptr.y > H - 110) return;
+      if (this.readonly || over.length || ptr.y < TOP || ptr.y > H - 110 || ptr.getDistance() > 24) return; // こすった あとは エサを 落とさない
       if (this.type === "tank") this.feed(ptr.x, ptr.y);
     });
     // なでる：生き物を おしたまま 指を うごかす（2026-10-16）
     this.input.on("pointermove", ptr => {
       const st = this.stroking;
+      if (ptr.isDown && !st) { this.scrub(ptr, Math.hypot(ptr.x - ptr.prevPosition.x, ptr.y - ptr.prevPosition.y)); return; }
       if (!st || !ptr.isDown) return;
       const dd = Math.hypot(ptr.x - st.lx, ptr.y - st.ly);
       st.lx = ptr.x; st.ly = ptr.y; st.dist += dd; st.total += dd;
@@ -153,7 +154,8 @@ export class PenView extends Phaser.Scene {
       const water = this.type === "tank";
       const bottom = !water || BOTTOM.has(d.name), still = STILL.has(d.name), drift = DRIFT.has(d.name);
       const z = bottom ? rand(0.2, 1) : rand(0, 1);
-      const px = water ? AQ_PX[d.aquatic.tank] : Math.min(300, 60 + 22 * d.space);
+      const st = S.stage(a, Date.now()), grow = st === "baby" ? 0.6 : st === "young" ? 0.8 : 1; // 赤ちゃんは 小さく（2026-10-16）
+      const px = (water ? AQ_PX[d.aquatic.tank] : Math.min(300, 60 + 22 * d.space)) * grow;
       const spr = creature(this, rand(120, W - 120), water ? rand(TOP + VH * 0.2, TOP + VH * 0.6) : this.floorY(z), a.kind, px, S.shineOf(a), S.paintOf(a));
       const k = 0.55 + 0.45 * z;
       if (water && !S.shineOf(a) && !a.sick) {
@@ -164,6 +166,7 @@ export class PenView extends Phaser.Scene {
       spr.setDepth(10 + z * 60).setInteractive({ useHandCursor: true });
       const f = { a, d, spr, z, k, px, bottom, still, drift, x: spr.x, y: spr.y, vx: rand(-1, 1) || 0.5, vy: 0, ph: rand(0, 6), hop: 0, spin: 0, turn: rand(1, 5), base: spr.scaleX,
         left: (water ? AQUATIC_IMAGES : ANIMAL_IMAGES)[a.kind]?.left ?? true };
+      if (st === "baby") f.mark = text(this, 0, 0, "🍼", 22).setDepth(91);
       spr.on("pointerdown", ptr => { this.stroking = { f, lx: ptr.x, ly: ptr.y, dist: 0, total: 0 }; });
       spr.on("pointerup", () => { if (!this.stroking || this.stroking.total < 30) this.poke(f); });
       this.cast.push(f);
@@ -174,6 +177,12 @@ export class PenView extends Phaser.Scene {
     burst(this, f.spr.x, f.spr.y - f.px * f.k * 0.3, "heart", 2, 26, 60);
     this.tweens.add({ targets: f, hop: -18, duration: 140, yoyo: true });
     if (this.readonly) return;
+    const now = this.pen().animals.find(q => q.id === f.a.id);
+    if (!this.water && now && S.needs(now, this.pen()).includes("clean")) { // よごれた子を なでると あわあわ → 3かいで せっけん
+      burst(this, f.spr.x, f.spr.y - 20, "bubbles", 3, 30, 60);
+      f.soap = (f.soap || 0) + 1;
+      if (f.soap >= 3) { f.soap = 0; this.useTool("soap"); }
+    }
     const r = S.pet(store.shop, f.a.id, Date.now());
     if (!r.ok) return;
     store.setShop(r.shop);
@@ -282,7 +291,10 @@ export class PenView extends Phaser.Scene {
     const p = this.pen();
     if (!p) return;
     this.dirt.clear();
-    if (p.dirty) for (let i = 0; i < 6; i++) this.dirt.fillStyle(0x6b4a24, 0.8).fillCircle(150 + i * 190 + (i % 2) * 40, H - 130 - (i % 3) * 14, 10 + (i % 3) * 4);
+    // よごれ：指で こすると うすくなり、ぜんぶ消えると そうじ（2026-10-16）。ボタンの そうじも のこす
+    if (p.dirty && !this.spots) this.spots = Array.from({ length: 6 }, (_, i) => ({ x: 150 + i * 190 + (i % 2) * 40, y: H - 130 - (i % 3) * 14, r: 14 + (i % 3) * 5, hp: 1 }));
+    if (!p.dirty) this.spots = null;
+    this.drawSpots();
     if (this.murk) this.murk.setAlpha(p.dirty ? 0.18 : Math.max(0, 0.22 - 0.22 * Math.min(...p.animals.map(a => a.clean).concat(1)) * 1.2));
     for (const f of this.cast) {
       const a = p.animals.find(q => q.id === f.a.id);
@@ -290,6 +302,20 @@ export class PenView extends Phaser.Scene {
       (f.icons || []).forEach(i => i.destroy());
       f.icons = want.map(n => img(this, 0, 0, { food: "fork", clean: this.water ? "water" : "soap" }[n], 26).setDepth(90));
     }
+  }
+
+  drawSpots() {
+    this.dirt.clear();
+    for (const sp of this.spots || []) if (sp.hp > 0) this.dirt.fillStyle(0x6b4a24, 0.8 * sp.hp).fillCircle(sp.x, sp.y, sp.r).fillStyle(0x6b4a24, 0.5 * sp.hp).fillCircle(sp.x + sp.r * 0.8, sp.y - 4, sp.r * 0.5);
+  }
+  scrub(ptr, dd) {
+    if (!this.spots || this.readonly) return;
+    let hit = false;
+    for (const sp of this.spots) if (sp.hp > 0 && Math.hypot(ptr.x - sp.x, ptr.y - sp.y) < sp.r + 30) { sp.hp -= dd / 260; hit = true; }
+    if (!hit) return;
+    if (Math.random() < 0.3) burst(this, ptr.x, ptr.y, "sparkles", 1, 20, 30);
+    this.drawSpots();
+    if (this.spots.every(sp => sp.hp <= 0)) { this.spots = null; this.useTool("broom"); }
   }
 
   update(_, dtMs) {
@@ -337,6 +363,8 @@ export class PenView extends Phaser.Scene {
         f.turn = rand(2, 6);
         const rest = !water && Math.random() < 0.35; // 陸の動物は ときどき 立ち止まる
         f.vx = rest ? 0 : (Math.random() < 0.5 ? -1 : 1) * sp * rand(0.6, 1);
+        const mom = f.mark && s.cast.find(m => m.a.id === f.a.mother); // 赤ちゃんは お母さんの そばへ
+        if (mom && Math.abs(mom.x - f.x) > 90) { f.vx = Math.sign(mom.x - f.x) * sp; f.vy = mom.bottom ? 0 : Math.sign(mom.y - f.y) * sp * 0.3; f.turn = 1; }
         f.vy = f.bottom ? 0 : rand(-0.3, 0.3) * sp * (f.drift ? 3 : 1);
       }
     }
@@ -354,6 +382,7 @@ export class PenView extends Phaser.Scene {
     const dir = f.vx === 0 ? f.spr.flipX : (f.left ? f.vx > 0 : f.vx < 0);
     f.spr.setPosition(f.x, f.y + bob + f.hop * f.k).setScale(f.base * f.k).setFlipX(dir)
       .setRotation((f.bottom ? 0 : clamp(f.vy / 300, -0.3, 0.3) * (f.vx > 0 ? 1 : -1)) + f.spin);
+    if (f.mark) f.mark.setPosition(f.spr.x + size * 0.35, f.spr.y - size * 0.4);
     (f.icons || []).forEach((im, j) => im.setPosition(f.spr.x - 14 * (f.icons.length - 1) + j * 28, f.spr.y - size * 0.55 - 8));
   }
 }

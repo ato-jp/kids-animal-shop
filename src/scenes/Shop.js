@@ -87,9 +87,12 @@ export class Shop extends Phaser.Scene {
     const sale = pens.filter(p => S.purposeOf(p) === "sale"), pool = sale.length && Math.random() < 0.7 ? sale : pens;
     const pen = pool[Math.floor(Math.random() * pool.length)], [fw, fh] = S.footprint(pen), [px, py] = this.toScreen(pen.x, pen.y);
     const tx = px + (fw * this.tile) / 2 + (Math.random() * 40 - 20), ty = Math.min(AREA.y + AREA.h - 30, py + fh * this.tile + 26);
-    const who = ["man", "woman", "boy", "girl"][Math.floor(Math.random() * 4)];
+    // AIの全身の絵（pp_。tools/gen_scenes.py の PEOPLE）があれば それ、まだなら 絵文字の顔
+    const pp = this.textures.getTextureKeys().filter(k => k.startsWith("pp_"));
     const c = this.add.container(-60, AREA.y + AREA.h - 40).setDepth(20);
-    const body = img(this, 0, 0, who, 72);
+    let body;
+    if (pp.length) { body = this.add.image(0, 30, pp[Math.floor(Math.random() * pp.length)]).setOrigin(0.5, 1); body.setScale(110 / body.height); }
+    else body = img(this, 0, 0, ["man", "woman", "boy", "girl"][Math.floor(Math.random() * 4)], 72);
     c.add([this.add.ellipse(0, 34, 50, 14, 0x000000, 0.18), body]);
     this.people++;
     this.tweens.add({ targets: body, y: -6, duration: 220, yoyo: true, repeat: -1 }); // てくてく

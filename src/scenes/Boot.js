@@ -19,7 +19,8 @@ export class Boot extends Phaser.Scene {
     for (const k of Object.keys(ANIMAL_IMAGES)) this.load.image("an_" + k, `assets/animals/${k}.png`);
     for (const k of SCENE_IMAGES.scenes) this.load.image("bg_" + k, `assets/scenes/${k}.jpg`);
     for (const k of SCENE_IMAGES.buildings) this.load.image("bd_" + k, `assets/buildings/${k}.png`);
-    for (const k of SCENE_IMAGES.town || []) this.load.image("tn_" + k, `assets/town/${k}.png`); // 町（見下ろし）の建物と飾り
+    for (const k of SCENE_IMAGES.town || []) this.load.image("tn_" + k, `assets/town/${k}.png`);
+    for (const k of SCENE_IMAGES.people || []) this.load.image("pp_" + k, `assets/people/${k}.png`); // お店を歩く お客さん // 町（見下ろし）の建物と飾り
   }
   async create() {
     await store.load();
