@@ -3,8 +3,9 @@ import { sfx } from "../sound/sfx.js";
 import { SHINES } from "../data/shine.js";
 export const W = 1280, H = 720;
 export const FONT = '"M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Noto Sans JP", sans-serif';
+export const PIXFONT = '"DotGothic16", ' + FONT; // 町（版3）の ドット風の 文字（scene.pixelUI の 画面だけ）
 export const text = (scene, x, y, str, size = 32, color = "#4a2c17", extra = {}) =>
-  scene.add.text(x, y, str, { fontFamily: FONT, fontSize: size + "px", fontStyle: "bold", color, align: "center", ...extra }).setOrigin(0.5);
+  scene.add.text(x, y, str, { fontFamily: scene.pixelUI ? PIXFONT : FONT, fontSize: size + "px", fontStyle: scene.pixelUI ? "normal" : "bold", color, align: "center", ...extra }).setOrigin(0.5);
 
 // 絵を「一辺 px ピクセル」の大きさで置く（元の絵は 256px）
 export const img = (scene, x, y, key, px) => scene.add.image(x, y, key).setScale(px / 256);
@@ -159,15 +160,26 @@ export function panel(scene, title, { w = 1100, h = 620, onClose } = {}) {
   const dim = scene.add.rectangle(0, 0, W, H, 0x000000, 0.45).setOrigin(0).setInteractive();
   dim.on("pointerup", close);
   const hit = scene.add.rectangle(W / 2, H / 2, w, h, 0xffffff, 0).setInteractive();
-  const bg = scene.add.graphics().fillStyle(0xfffaf2, 1).fillRoundedRect(W / 2 - w / 2, H / 2 - h / 2, w, h, 36);
+  const bg = scene.add.graphics();
+  if (scene.pixelUI) pixelFrame(bg, W / 2 - w / 2, H / 2 - h / 2, w, h); // 町（版3）：ドットの わく
+  else bg.fillStyle(0xfffaf2, 1).fillRoundedRect(W / 2 - w / 2, H / 2 - h / 2, w, h, 36);
   L.add([dim, hit, bg, text(scene, W / 2, H / 2 - h / 2 + 46, title, 36, "#7a4a1e")]);
   L.add(button(scene, W / 2 + w / 2 - 50, H / 2 - h / 2 + 46, "back", 44, close, { ring: 0x9fd3e6 }));
   return { L, close, top: H / 2 - h / 2, left: W / 2 - w / 2, w, h };
 }
 
+// ドットの わく（カイロソフト風：こい ふち・明るい うちがわの線・角は 1だん けずる）
+export function pixelFrame(g, x, y, w, h, fill = 0xfff6e2, edge = 0x5a3a24) {
+  const P = 4;
+  g.fillStyle(edge, 1).fillRect(x + P, y, w - P * 2, h).fillRect(x, y + P, w, h - P * 2);
+  g.fillStyle(fill, 1).fillRect(x + P, y + P, w - P * 2, h - P * 2);
+  g.fillStyle(0xffffff, 0.7).fillRect(x + P * 2, y + P, w - P * 4, P / 2).fillRect(x + P, y + P * 2, P / 2, h - P * 4);
+  g.fillStyle(0x000000, 0.12).fillRect(x + P * 2, y + h - P * 1.5, w - P * 4, P / 2);
+  return g;
+}
 // 押せる白いカード（小窓の中の一覧に使う）
 export function card(scene, L, x, y, w, h, onTap, color = 0xffffff) {
-  const g = scene.add.graphics().fillStyle(color, 1).fillRoundedRect(x - w / 2, y - h / 2, w, h, 20);
+  const g = scene.pixelUI ? pixelFrame(scene.add.graphics(), x - w / 2, y - h / 2, w, h, color, 0x8a6a48) : scene.add.graphics().fillStyle(color, 1).fillRoundedRect(x - w / 2, y - h / 2, w, h, 20);
   const z = scene.add.zone(x, y, w, h).setInteractive({ useHandCursor: true });
   z.on("pointerdown", () => { g.setAlpha(0.7); scene.time.delayedCall(120, () => g.active && g.setAlpha(1)); }); // 押した手ごたえ
   z.on("pointerup", onTap);

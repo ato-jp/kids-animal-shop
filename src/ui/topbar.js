@@ -1,6 +1,6 @@
 // どの画面にも出す上の帯：自分の顔（押すと だれ？）・お金・日付と季節と時刻・天気・町へもどる。
 import { store } from "../store.js";
-import { W, text, img, button, kidFace, coin } from "./kit.js";
+import { W, text, img, button, kidFace, coin, pixelFrame } from "./kit.js";
 import { season, timeOfDay, SEASONS } from "../logic/time.js";
 import { weatherNow, WEATHER_NAME } from "../weather.js";
 import { sfx } from "../sound/sfx.js";
@@ -8,7 +8,8 @@ import { sfx } from "../sound/sfx.js";
 const WEATHER_ICON = ["sun", "cloud", "water"];
 
 export function topBar(scene, { back = true } = {}) {
-  scene.add.graphics().fillStyle(0xf6dfb8, 1).fillRect(0, 0, W, 84).setDepth(500);
+  if (scene.pixelUI) pixelFrame(scene.add.graphics().setDepth(500), -4, -4, W + 8, 88, 0xf6dfb8, 0x5a3a24); // 町（版3）：ドットの 帯
+  else scene.add.graphics().fillStyle(0xf6dfb8, 1).fillRect(0, 0, W, 84).setDepth(500);
   const id = store.family.current, kid = store.kid;
   const face = kidFace(scene, 46, 42, id, kid, 64).setDepth(501).setSize(76, 76).setInteractive({ useHandCursor: true });
   face.on("pointerup", () => { sfx.pop(); scene.scene.start("Who"); });

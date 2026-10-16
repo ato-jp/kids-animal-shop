@@ -1,4 +1,5 @@
 // じぶんの どうぶつえん と すいぞくかん（第3弾 2026-10-16。同じ日の壁打ちで 作り直し。docs/roadmap.md）
+// ・2026-10-16 町（版3）：展示は 町に 直接 置く（x,y）。だんかいで たてられる 数（slots）と 町の 広さが ふえる
 // ・どちらも 最初から 町にある。はじめは「おんぼろ」で てんじ2わく。お金で 6だんかいまで 大きくする（LEVELS）
 // ・どうぶつえん＝陸の てんじ（ひろば・おおきな ひろば）、すいぞくかん＝水の てんじ（たんすい・かいすい・こおりの いけ）
 // ・すいぞくかんが「ちいさな」に なった お祝いに ペンギン2わ（附属書I なので お店では買えない子）
@@ -7,6 +8,8 @@
 import { species, findPen, whyNoRoom, shineOf, newAnimal, placesFor, priceOf, addPoints } from "./shop.js";
 import { ANIMALS } from "../data/animals.js";
 import { gameYears, GAME_YEAR_MS } from "./time.js";
+import { roadNet, exhibitOpen, findExhibitSpot, canPlaceAt } from "./town.js";
+import { DEFAULT_EXHIBITS, EXHIBIT_SIZE } from "../data/town.js";
 
 export const ZOO_FEE = 1, ZOO_KEEP = 10; // 入園料は 1人1コイン、飼育員さんは てんじ1つ 1日10コイン（2026-10-16 tools/sim_zoo.mjs で 3か月ほどに合わせた）
 export const FACILITIES = {
@@ -24,8 +27,9 @@ export const LEVELS = [
 ];
 // にんき＝しゅるい×6 ＋ あたま数 ＋ キラキラ（ブロンズ2・シルバー4・ゴールド8・レインボー16）＋ ここで生まれた子×2
 const SHINE_NINKI = { bronze: 2, silver: 4, gold: 8, rainbow: 16 };
+// 町（版3）：入口からの 道に 面していない 展示は お客さんが 来ないので 数えない（logic/town.js の exhibitOpen）
 export function ninki(shop, f) {
-  const all = facAnimals(shop, f);
+  const net = roadNet(shop), all = (shop[f]?.exhibits || []).filter(e => exhibitOpen(shop, e, net)).flatMap(e => e.animals);
   return new Set(all.map(a => a.kind)).size * 6 + all.length + all.reduce((t, a) => t + (SHINE_NINKI[shineOf(a)] || 0) + (a.bornHere ? 2 : 0), 0);
 }
 export const MAX_SLOTS = 8;
@@ -55,32 +59,41 @@ export const zooAnimals = shop => allExhibits(shop).flatMap(e => e.animals);
 const used = ex => ex.animals.reduce((t, a) => t + species(a.kind).space, 0);
 const findEx = (s, exId) => { for (const f of ["zoo", "aqua"]) { const ex = s[f]?.exhibits.find(e => e.id === exId); if (ex) return { f, ex }; } return null; };
 const findIn = (s, animalId) => { for (const ex of allExhibits(s)) if (ex.animals.some(a => a.id === animalId)) return ex; return null; };
-const freeSlot = (fac) => [...Array(LEVELS[fac.level].slots).keys()].find(i => !fac.exhibits.some(e => e.slot === i));
-
-const emptyFac = (prefix, type) => ({ level: 0, nextEx: 2, total: 0, given: 0, gifts: [], exhibits: [{ id: prefix + "1", type, slot: 0, animals: [] }] });
+const emptyFac = (prefix, d) => ({ level: 0, nextEx: 2, total: 0, given: 0, gifts: [], exhibits: [{ id: prefix + "1", type: d.type, x: d.x, y: d.y, animals: [] }] });
 // 新しい お店にも、前の版の記録（1つの どうぶつえん・もん）にも、2つの施設を そろえる（s を書きかえる）
 export function ensureFacilities(s) {
   const old = s.zoo && s.zoo.gate !== undefined ? s.zoo : null;
-  if (!s.zoo || old) s.zoo = emptyFac("z", "land");
-  if (!s.aqua) s.aqua = emptyFac("q", "fresh");
+  if (!s.zoo || old) s.zoo = emptyFac("z", DEFAULT_EXHIBITS.zoo);
+  if (!s.aqua) s.aqua = emptyFac("q", DEFAULT_EXHIBITS.aqua);
   if (old) { // 前の版：陸の てんじは どうぶつえん、水は すいぞくかんへ。もんの だんかいを 規模に うつす
     s.zoo.exhibits = []; s.aqua.exhibits = [];
     for (const ex of old.exhibits) { const f = facilityOfType(ex.type), fac = s[f]; fac.exhibits.push({ ...ex, id: (f === "zoo" ? "z" : "q") + fac.nextEx++, slot: fac.exhibits.length }); }
     for (const f of ["zoo", "aqua"]) { const fac = s[f]; fac.level = [0, 2, 3, 5][old.gate] || 0; while (LEVELS[fac.level].slots < fac.exhibits.length) fac.level++; }
     Object.assign(s.aqua, { total: old.total || 0, given: old.given || 0, gifts: old.gifts || [] });
   }
+  // 町（版3）より前の 展示には 場所が ない：はじめの 場所 → 道に 面した あいている所 の じゅんに 置く
+  for (const f of ["zoo", "aqua"]) for (const ex of s[f].exhibits) {
+    delete ex.slot;
+    if (ex.x != null) continue;
+    const d = DEFAULT_EXHIBITS[f], spot = d.type === ex.type && canPlaceAt(s, d.x, d.y, ...EXHIBIT_SIZE[ex.type]) ? [d.x, d.y] : findExhibitSpot(s, ex.type);
+    if (spot) { ex.x = spot[0]; ex.y = spot[1]; }
+  }
   return s;
 }
 
-export function buildExhibit(shop, f, type, slot) {
+// 展示を 町に たてる。x,y を わたせば そこ、なければ 道に 面した あいている所。だんかいで たてられる 数が きまる
+export const canBuildMore = (shop, f) => shop[f].exhibits.length < LEVELS[shop[f].level].slots;
+export function buildExhibit(shop, f, type, x = null, y = null) {
   const fac = shop[f];
   if (!fac || !EXHIBITS[type] || !FACILITIES[f].types.includes(type)) return { shop, ok: false, why: "none" };
-  if (slot < 0 || slot >= LEVELS[fac.level].slots || fac.exhibits.some(e => e.slot === slot)) return { shop, ok: false, why: "used" };
+  if (!canBuildMore(shop, f)) return { shop, ok: false, why: "max" };
   if (shop.money < EXHIBITS[type].cost) return { shop, ok: false, why: "nomoney" };
-  const s = clone(shop);
+  const spot = x != null ? (canPlaceAt(shop, x, y, ...EXHIBIT_SIZE[type]) ? [x, y] : null) : findExhibitSpot(shop, type);
+  if (!spot) return { shop, ok: false, why: "noroom" };
+  const s = clone(shop), id = (f === "zoo" ? "z" : "q") + s[f].nextEx++;
   s.money -= EXHIBITS[type].cost; s.today.expense += EXHIBITS[type].cost;
-  s[f].exhibits.push({ id: (f === "zoo" ? "z" : "q") + s[f].nextEx++, type, slot, animals: [] });
-  return { shop: s, ok: true };
+  s[f].exhibits.push({ id, type, x: spot[0], y: spot[1], animals: [] });
+  return { shop: s, ok: true, id };
 }
 
 export function removeExhibit(shop, exId) {
@@ -102,9 +115,9 @@ export function upgradeFacility(shop, f, now = Date.now()) {
   let penguins = false;
   if (f === "aqua" && !s.aqua.penguinsGiven) {
     s.aqua.penguinsGiven = true; penguins = true;
-    const slot = freeSlot(s.aqua);
-    if (slot !== undefined) {
-      const ex = { id: "q" + s.aqua.nextEx++, type: "cold", slot, animals: [] };
+    const spot = canBuildMore(s, "aqua") && findExhibitSpot(s, "cold");
+    if (spot) {
+      const ex = { id: "q" + s.aqua.nextEx++, type: "cold", x: spot[0], y: spot[1], animals: [] };
       ex.animals.push(adultGift(s, "penguin", "m", now), adultGift(s, "penguin", "f", now));
       s.aqua.exhibits.push(ex);
       if (!s.seen.includes("penguin")) s.seen.push("penguin");

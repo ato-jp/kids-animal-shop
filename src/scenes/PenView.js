@@ -237,7 +237,7 @@ export class PenView extends Phaser.Scene {
 
   // 園の てんじ：あそぶ（陸だけ）と もどる。前を お客さんが ゆっくり 通る
   exhibitBar(p) {
-    const items = [...(this.type === "tank" ? [] : [["star", "あそぶ", () => this.toy()]]), ["back", "もどる", () => this.scene.start("Zoo", { f: this.ex.f })]];
+    const items = [...(this.type === "tank" ? [] : [["star", "あそぶ", () => this.toy()]]), ["back", "もどる", () => this.scene.start("Town")]];
     items.forEach(([icon, label, fn], i) => {
       const x = W - 70 - (items.length - 1 - i) * 130;
       button(this, x, H - 60, icon, 56, () => { sfx.pop(); fn(); }).setDepth(101);

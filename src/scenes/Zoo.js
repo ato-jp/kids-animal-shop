@@ -46,7 +46,7 @@ export class Zoo extends Phaser.Scene {
     card(this, this.add.container(0, 0), 1140, 128, 200, 52, () => { if (this.visit) return; sfx.pop(); this.levelMenu(); }, Z.LEVELS[z.level + 1] ? 0xfff1c9 : 0xe6f4dc);
     text(this, 1140, 128, Z.LEVELS[z.level + 1] ? "🏗 おおきく する" : "⭐ いちばん おおきい", 18, "#7a4a1e");
     for (let i = 0; i < Z.MAX_SLOTS; i++) {
-      const ex = z.exhibits.find(e => e.slot === i), [x, y] = slotXY(i);
+      const ex = z.exhibits[i], [x, y] = slotXY(i); // 町（版3）：展示は 町に ある。ここでは たてた じゅんに ならべる
       if (ex) this.exhibit(ex, x, y);
       else if (i >= lv.slots) this.lockedSlot(x, y);
       else if (!this.visit) this.emptySlot(i, x, y);
@@ -136,9 +136,9 @@ export class Zoo extends Phaser.Scene {
     const g = this.add.graphics(), h = SH - 40;
     g.fillStyle(0xffffff, 0.22).fillRoundedRect(x, y, SW, h, 18).lineStyle(4, 0xffffff, 0.8).strokeRoundedRect(x, y, SW, h, 18);
     text(this, x + SW / 2, y + h / 2 - 10, "＋", 64, "#ffffff");
-    text(this, x + SW / 2, y + h / 2 + 44, "てんじを つくる", 20, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 5 });
+    text(this, x + SW / 2, y + h / 2 + 44, "まちに たてる", 20, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 5 });
     const zone = this.add.zone(x + SW / 2, y + SH / 2, SW, SH).setInteractive({ useHandCursor: true });
-    zone.on("pointerup", () => { sfx.pop(); this.buildMenu(i); });
+    zone.on("pointerup", () => { sfx.pop(); this.scene.start("Town", { build: this.f }); }); // たてる のは 町の 上
   }
 
   buildMenu(slot) {
@@ -212,8 +212,8 @@ export class Zoo extends Phaser.Scene {
     const next = Z.LEVELS[z.level + 1]; // にんきと お金が たりたら（はじめの 2だんかいだけ）「おおきく しよう」
     if (next && z.level < 2 && Z.ninki(store.shop, this.f) >= next.need[this.f] && store.shop.money >= next.cost) { guide(this, 1140, 128, "おおきく しよう", 60); return; }
     const empty = z.exhibits.find(e => !e.animals.length);
-    if (empty) { const [x, y] = slotXY(empty.slot); guide(this, x + SW / 2, y + SH / 2 - 70, "おみせの こを つれて こよう", 60); return; }
-    if (z.exhibits.length < 2) { const free = [...Array(Z.LEVELS[z.level].slots).keys()].find(i => !z.exhibits.some(e => e.slot === i)); const [x, y] = slotXY(free); guide(this, x + SW / 2, y + SH / 2 - 70, "てんじを つくろう", 60); }
+    if (empty) { const [x, y] = slotXY(z.exhibits.indexOf(empty)); guide(this, x + SW / 2, y + SH / 2 - 70, "おみせの こを つれて こよう", 60); return; }
+    if (z.exhibits.length < 2) { const [x, y] = slotXY(z.exhibits.length); guide(this, x + SW / 2, y + SH / 2 - 70, "てんじを つくろう", 60); }
   }
 
   // てんじの子を押したとき：おみせへ もどす（売るのは おみせで）／ほかの えんへ ゆずる（こうけん が たまる）
