@@ -17,13 +17,17 @@ import { LEVELS, ninki } from "../logic/zoo.js";
 import { prizeReady } from "../logic/prize.js";
 import { eventOn, presentReady, takePresent } from "../logic/events.js";
 import { sfx } from "../sound/sfx.js";
+import { season } from "../logic/time.js";
 import { bgm } from "../sound/bgm.js";
 
 export class Town extends Phaser.Scene {
   constructor() { super("Town"); }
-  create() {
+  create({ visit } = {}) {
     bgm.play("town");
     this.edit = false;
+    // 兄弟の 町を 見に来たとき（えき の でんしゃ から。2026-10-16）：見るだけ。お店・どうぶつえん・すいぞくかん には 入れる
+    if (visit && visit !== store.family.current) { store.visitFrom = store.visitFrom || store.family.current; store.family.current = visit; }
+    this.visit = !!store.visitFrom;
     this.cols = colsOf(townOf(store.shop));
     this.drawGround();
     this.gridG = this.add.graphics().setDepth(1);
@@ -40,10 +44,15 @@ export class Town extends Phaser.Scene {
     this.wideBtn = button(this, W - 230, 42, "park", 56, () => { sfx.pop(); this.expandMenu(); }).setDepth(600);
     this.wideLabel = text(this, W - 230, 98, "まちを ひろげる", 15, "#ffffff", { stroke: "#4a2c17", strokeThickness: 5 }).setDepth(600);
     this.eventDeco();
+    if (this.visit) {
+      [this.editBtn, this.editLabel, this.buyBtn, this.buyLabel, this.wideBtn, this.wideLabel].forEach(o => o.destroy());
+      button(this, W - 56, 42, "back", 48, () => { sfx.pop(); store.family.current = store.visitFrom; store.visitFrom = null; store.persist(); this.scene.start("Station"); }, { ring: 0x9fd3e6 }).setDepth(501);
+      text(this, 40, 112, `${store.kid?.name ? store.kid.name + "の " : ""}まち（みるだけ）`, 24, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 6 }).setOrigin(0, 0.5).setDepth(70);
+    }
     for (const o of this.children.list) if (!before.has(o)) o.setScrollFactor(0); // 上の帯・ボタン・時刻の色・行事は 画面に固定
     this.setupScroll();
     this.redraw();
-    this.time.delayedCall(300, () => this.showSummary());
+    if (!this.visit) this.time.delayedCall(300, () => this.showSummary());
   }
 
   // 現実の行事（logic/events.js）：上に 札、空から ふる物、その年 1回の プレゼント
@@ -105,19 +114,27 @@ export class Town extends Phaser.Scene {
   // 上から見た芝生（2026-10-16「のっぺりしている」→ むら・草・小さな花・はしの暗さで 奥行きを出す）。並びは毎回同じ
   drawGround() {
     const g = this.add.graphics().setDepth(0), W = this.cols * T; // 町の よこはば ぶん 描く（画面の はばの W を ここだけ 上書き）
-    g.fillGradientStyle(0x9ccb62, 0x93c45a, 0x7fb04c, 0x76a845, 1).fillRect(0, 84, W, H - 84); // 左上が明るい（光が左上から）
+    // 季節で 地面の色が かわる（2026-10-16 壁打ち10回め）。春＝さくら・夏＝こい緑・秋＝かれ草と もみじ・冬＝雪
+    const sea = season(store.shop.startedAt, Date.now());
+    const P = [
+      { base: [0xa4d26a, 0x9acb62, 0x86b852, 0x7eb04c], blot: [0xb5dc7a, 0x8fc05a, 0xc3e08a, 0x7fb04c, 0x9fd06a], grass: [0x6a9a3a, 0x7aaa48, 0xc2e08e, 0x92c25a], dot: [0xffc4d8, 0xffffff, 0xff9fbf], dots: 160 },
+      { base: [0x86c04e, 0x7cb646, 0x669e38, 0x5e9432], blot: [0x93c95a, 0x6aa23c, 0x9ccf62, 0x5a8f30, 0x7bb446], grass: [0x4f7f28, 0x5e8f32, 0xa6d070, 0x76a840], dot: [0xffffff, 0xfff38a, 0xff8a5a], dots: 70 },
+      { base: [0xc9b46a, 0xbfa95e, 0xa8924c, 0x9e8846], blot: [0xd6c27a, 0xb39a52, 0xe0c27a, 0x9a8240, 0xc9a85e], grass: [0x8a7a3a, 0x9a8644, 0xe0cc8a, 0xb09a52], dot: [0xd9542a, 0xe8902a, 0xb8401e], dots: 220 },
+      { base: [0xf4f7fb, 0xeaf0f6, 0xdbe4ee, 0xd2dce8], blot: [0xffffff, 0xdfe8f2, 0xf8fbff, 0xcfdbe8, 0xe8eef6], grass: [0x9fb0a0, 0xb0c0b4, 0xffffff, 0xc4d0c8], dot: [0xffffff, 0xe6f0ff, 0xcfe0f4], dots: 120 },
+    ][sea];
+    g.fillGradientStyle(...P.base, 1).fillRect(0, 84, W, H - 84); // 左上が明るい（光が左上から）
     const rnd = (k, m) => ((k * 2654435761) >>> 0) % m;
     for (let k = 0; k < 260; k++) { // 色のむら（大小の うすい まる）
       const x = rnd(k + 1, W), y = 84 + rnd(k + 7, H - 84), r = 18 + rnd(k + 3, 70);
-      g.fillStyle([0xa9d46e, 0x7ca848, 0xb5cf6a, 0x6f9e40, 0x8fc05a][k % 5], 0.06 + (k % 4) * 0.02).fillEllipse(x, y, r * 2, r * 1.4);
+      g.fillStyle(P.blot[k % 5], 0.06 + (k % 4) * 0.02).fillEllipse(x, y, r * 2, r * 1.4);
     }
-    for (let k = 0; k < 1800; k++) { // 草の葉
+    for (let k = 0; k < (sea === 3 ? 500 : 1800); k++) { // 草の葉（冬は 雪から すこし のぞく だけ）
       const x = rnd(k * 3 + 11, W), y = 88 + rnd(k * 5 + 13, H - 90), h = 4 + rnd(k, 6);
-      g.lineStyle(1.5, [0x5f8f33, 0x6e9e3e, 0xb7da82, 0x88b850][k % 4], 0.55).lineBetween(x, y, x + (rnd(k, 5) - 2), y - h);
+      g.lineStyle(1.5, P.grass[k % 4], 0.55).lineBetween(x, y, x + (rnd(k, 5) - 2), y - h);
     }
-    for (let k = 0; k < 90; k++) { // 小さな花
+    for (let k = 0; k < P.dots; k++) { // 小さな花・さくらの花びら・おち葉・雪の つぶ
       const x = rnd(k * 17 + 5, W), y = 92 + rnd(k * 19 + 3, H - 96);
-      g.fillStyle([0xffffff, 0xfff38a, 0xffb3c8][k % 3], 0.9).fillCircle(x, y, 2).fillCircle(x + 3, y + 1, 1.5);
+      g.fillStyle(P.dot[k % 3], 0.9).fillCircle(x, y, 2).fillCircle(x + 3, y + 1, 1.5);
     }
     // はしを 少し暗く（目が まんなかに行く）
     g.fillGradientStyle(0x2f4a1c, 0x2f4a1c, 0x2f4a1c, 0x2f4a1c, 0.18, 0.18, 0, 0).fillRect(0, 84, W, 40);
@@ -170,6 +187,7 @@ export class Town extends Phaser.Scene {
     this.flats = {};
     for (const it of town.items) if (townSpec(it.kind).flat) this.flats[it.x + "," + it.y] = it.kind;
     for (const it of town.items) this.drawItem(it);
+    if (this.visit) { this.levelText.setText(`おみせ レベル ${shopLevel(store.shop)}`); return; }
     this.buyBtn.setVisible(this.edit); this.buyLabel.setVisible(this.edit); this.wideBtn.setVisible(this.edit); this.wideLabel.setVisible(this.edit);
     this.editBtn.list[0].clear().fillStyle(this.edit ? 0xffe28a : 0xffffff, 1).fillCircle(0, 0, 34).lineStyle(5, 0xf0c27a, 1).strokeCircle(0, 0, 34);
     this.levelText.setText(`おみせ レベル ${shopLevel(store.shop)}`);
@@ -236,6 +254,12 @@ export class Town extends Phaser.Scene {
       if (this.edit) { if (!isBuilding(it.kind)) this.decorItemMenu(it); return; }
       if (!isBuilding(it.kind)) return;
       sfx.pop();
+      if (this.visit) { // 兄弟の 町：お店・園だけ 入れる（見るだけ）
+        if (it.kind === "shop") this.scene.start("Shop", { visit: store.family.current });
+        else if (it.kind === "zoo" || it.kind === "aqua") this.scene.start("Zoo", { visit: store.family.current, f: it.kind });
+        else floatText(this, x0 + w / 2, y0, "みるだけ だよ", "#ffffff");
+        return;
+      }
       if (sp.to) this.scene.start(sp.to, sp.data); else floatText(this, x0 + w / 2, y0, sp.lockedMsg, "#a0522d");
     });
   }

@@ -36,7 +36,7 @@ export class Zoo extends Phaser.Scene {
       if (this.old) for (let k = 0; k < 14; k++) g.lineStyle(2, 0x0b2236, 0.6).lineBetween((k * 211) % W, 160 + (k * 97) % 500, (k * 211) % W + 30, 180 + (k * 97) % 500); // ひび
     }
     topBar(this, { back: !this.visit });
-    if (this.visit) button(this, W - 56, 42, "back", 48, () => { sfx.pop(); store.family.current = store.visitFrom; store.visitFrom = null; store.persist(); this.scene.start("Station"); }, { ring: 0x9fd3e6 }).setDepth(501);
+    if (this.visit) button(this, W - 56, 42, "back", 48, () => { sfx.pop(); this.scene.start("Town"); }, { ring: 0x9fd3e6 }).setDepth(501); // 兄弟の 町へ もどる（2026-10-16 町の見学）
     const title = `${store.kid?.name ? store.kid.name + "の " : ""}${lv.name} ${Z.FACILITIES[f].name}${this.visit ? "（みるだけ）" : ""}`;
     text(this, 40, 128, title, 28, "#ffffff", { stroke: f === "zoo" ? "#2e6b4f" : "#0b2236", strokeThickness: 7 }).setOrigin(0, 0.5);
     const nk = Z.ninki(shop, f), nextLv = Z.LEVELS[z.level + 1];

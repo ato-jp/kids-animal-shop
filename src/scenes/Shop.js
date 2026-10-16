@@ -51,7 +51,7 @@ export class Shop extends Phaser.Scene {
       kidFace(this, 1130, 230, store.family.current, k, 110);
       text(this, 1130, 330, `${k.name ? k.name + "の" : ""}
 おみせ（みるだけ）`, 20, "#ffffff", { stroke: "#4a2c17", strokeThickness: 5 });
-      button(this, W - 56, 42, "back", 48, () => { sfx.pop(); store.family.current = store.visitFrom; store.visitFrom = null; store.persist(); this.scene.start("Station"); }, { ring: 0x9fd3e6 }).setDepth(501);
+      button(this, W - 56, 42, "back", 48, () => { sfx.pop(); this.scene.start("Town"); }, { ring: 0x9fd3e6 }).setDepth(501); // 兄弟の 町へ もどる（2026-10-16 町の見学）
     } else this.makeSide();
     this.redraw();
     const onChange = () => this.redraw();

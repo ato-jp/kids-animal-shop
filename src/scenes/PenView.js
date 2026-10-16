@@ -185,6 +185,7 @@ export class PenView extends Phaser.Scene {
   }
 
   petOnce(f) {
+    f.wakeUntil = this.t + 4; // なでると すこし おきる
     burst(this, f.spr.x, f.spr.y - f.px * f.k * 0.3, "heart", 2, 26, 60);
     this.tweens.add({ targets: f, hop: -18, duration: 140, yoyo: true });
     if (this.readonly) return;
@@ -226,6 +227,7 @@ export class PenView extends Phaser.Scene {
 
   poke(f) {
     sfx.pop();
+    f.wakeUntil = this.t + 4;
     this.tweens.add({ targets: f, hop: -60, duration: 220, yoyo: true, ease: "Quad.easeOut" });
     if (this.type === "tank" && !f.bottom) this.tweens.add({ targets: f, spin: Math.PI * 2, duration: 600, ease: "Cubic.easeOut", onComplete: () => { f.spin = 0; } });
     const a = f.a, now = Date.now();
@@ -353,6 +355,8 @@ export class PenView extends Phaser.Scene {
   update(_, dtMs) {
     const d = Math.min(dtMs / 1000, 0.05), s = this;
     s.t += d;
+    const h = new Date().getHours();
+    s.night = h >= 21 || h < 6; // 夜は ねる（2026-10-16。見た目だけ。世話や あそぶ は いつもどおり）
     if (s.type === "tank") {
       for (const [g, z] of [[s.weedBack, 0], [s.weedFront, 1]]) {
         g.clear();
@@ -377,6 +381,15 @@ export class PenView extends Phaser.Scene {
 
   move(f, d) {
     const s = this, water = s.type === "tank", size = f.px * f.k;
+    const asleep = s.night && !(f.wakeUntil > s.t) && !(s.ball && s.ball.active);
+    if (asleep) { // まるくなって じっと。💤
+      f.vx = 0; f.vy = 0;
+      if (!f.zz) f.zz = text(s, 0, 0, "💤", 22).setDepth(92);
+      f.zz.setVisible(true).setPosition(f.spr.x + size * 0.3, f.spr.y - size * 0.45 + Math.sin(s.t * 2 + f.ph) * 4);
+      f.spr.setScale(f.base * f.k * 1.05, f.base * f.k * 0.85);
+      return;
+    }
+    if (f.zz) f.zz.setVisible(false);
     const sp = (water ? 70 : 45) * (0.6 + 0.4 * f.k) * (f.still ? 0.08 : f.drift ? 0.25 : 1);
     let target = null, best = 1e9, chasing = false;
     if (!water && s.ball && s.ball.active && !f.a.sick) { // ボールを 追いかける
