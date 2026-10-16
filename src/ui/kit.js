@@ -154,7 +154,7 @@ export function gauge(scene, g, x, y, w, v) {
 
 // 小窓。dim を押すか ← で閉じる。L に部品を足していく
 export function panel(scene, title, { w = 1100, h = 620, onClose } = {}) {
-  const L = scene.add.container(0, 0).setDepth(600);
+  const L = scene.add.container(0, 0).setDepth(600).setScrollFactor(0); // 町を よこに動かしても 小窓は 画面に 固定
   const close = () => { L.destroy(); onClose && onClose(); };
   const dim = scene.add.rectangle(0, 0, W, H, 0x000000, 0.45).setOrigin(0).setInteractive();
   dim.on("pointerup", close);

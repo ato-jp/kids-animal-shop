@@ -3,6 +3,7 @@ import { store } from "../store.js";
 import * as S from "../logic/shop.js";
 import * as Z from "../logic/zoo.js";
 import { AQUATIC } from "../data/aquatic.js";
+import { BREEDS } from "../data/morphs.js";
 import { W, H, text, card, creature, panel, floatText, coin, burst, button, guide } from "../ui/kit.js";
 import { topBar } from "../ui/topbar.js";
 import { MESSAGE } from "./Shop.js";
@@ -56,6 +57,19 @@ export class Zoo extends Phaser.Scene {
     else if (f === "aqua" && Z.ZOO_GIFTS[z.given || 0] && !this.visit) text(this, W / 2, 668, `つぎの おくりもの まで あと ${Z.ZOO_GIFTS[z.given || 0].visitors - (z.total || 0)}にん`, 18, "#fff4a8", hint);
     this.showGuide();
     text(this, W / 2, 698, `にゅうえんりょう 1にん ${Z.ZOO_FEE}コイン　しいくいんさん 1ぴき 1にち ${Z.ZOO_KEEP}コイン（${coin(Z.zooKeepCost(shop, f))}）`, 18, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 5 });
+  }
+
+  // 赤ちゃんが 生まれる 条件を ことばで（logic/shop.js の breedDay と 同じ 見かた）
+  babyHint(ex) {
+    if (!ex.animals.length) return "";
+    const kind = ex.animals[0].kind, now = Date.now();
+    if (!BREEDS[kind]) return "この いきものは ここでは あかちゃんが うまれないよ";
+    if (ex.breed === false) return "「あかちゃん なし」に なっているよ";
+    const adults = ex.animals.filter(a => S.stage(a, now) === "adult");
+    const m = adults.some(a => a.sex === "m"), f = adults.some(a => a.sex === "f");
+    if (m && f) return "👶 おとなの オスと メスが いるよ。あかちゃんが うまれるかも！";
+    if (!m && !f) return "おとなに なると あかちゃんが うまれるかも";
+    return `おとなの ${m ? "メス♀" : "オス♂"}が いないよ。いっしょに すると あかちゃんが うまれるかも`;
   }
 
   // にんきの ゲージ：星が たまって いっぱいで 光る（数字が読めない子にも 分かるように。数字は 小さく そえる）
@@ -149,9 +163,12 @@ export class Zoo extends Phaser.Scene {
     ex.animals.slice(0, 9).forEach((a, k) => {
       const x = P.left + 90 + k * 116, y = P.top + 175;
       card(this, P.L, x, y, 104, 104, () => { sfx.pop(); this.animalMenu(a); }, 0xe9f6ff);
-      P.L.add(creature(this, x, y, a.kind, 80, S.shineOf(a), S.paintOf(a)));
+      P.L.add(creature(this, x, y - 6, a.kind, 72, S.shineOf(a), S.paintOf(a)));
+      const st = S.stage(a, Date.now());
+      P.L.add(text(this, x, y + 40, `${a.sex === "m" ? "♂" : "♀"} ${{ baby: "あかちゃん", young: "こども", adult: "おとな", old: "おとしより" }[st]}`, 13, a.sex === "m" ? "#1f6fb2" : "#c0392b"));
     });
-    P.L.add(text(this, P.left + 40, P.top + 260, "おみせから つれて くる", 20, "#7a4a1e").setOrigin(0, 0.5));
+    P.L.add(text(this, P.left + 40, P.top + 236, this.babyHint(ex), 17, "#c0392b").setOrigin(0, 0.5));
+    P.L.add(text(this, P.left + 40, P.top + 268, "おみせから つれて くる", 20, "#7a4a1e").setOrigin(0, 0.5));
     const want = shop.pens.flatMap(p => p.animals).filter(a => Z.exhibitFor(a.kind) === ex.type && (!ex.animals.length || a.kind === ex.animals[0].kind));
     if (!want.length) P.L.add(text(this, W / 2, P.top + 340, ex.animals.length ? `おみせに ${S.species(ex.animals[0].kind).name}が いないよ` : "この てんじで くらせる こが おみせに いないよ", 20, "#9a8a7a"));
     want.slice(0, 18).forEach((a, k) => {

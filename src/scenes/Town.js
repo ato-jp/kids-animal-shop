@@ -9,7 +9,7 @@ import { topBar } from "../ui/topbar.js";
 import { ambient } from "../ui/ambient.js";
 import { shopLevel, species, needs } from "../logic/shop.js";
 import { boardFor, canFulfill } from "../logic/board.js";
-import { townOf, townSpec, isBuilding, moveTownItem, buyTownDecor, removeTownDecor, canPlaceTown } from "../logic/town.js";
+import { townOf, townSpec, isBuilding, moveTownItem, buyTownDecor, removeTownDecor, canPlaceTown, colsOf, expandTown, TOWN_EXPAND } from "../logic/town.js";
 import { TOWN_TILE as T, TOWN_TOP, TOWN_COLS, TOWN_ROWS, TOWN_DECOR } from "../data/town.js";
 import { SHINES } from "../data/shine.js";
 import { MORPHS } from "../data/morphs.js";
@@ -24,9 +24,11 @@ export class Town extends Phaser.Scene {
   create() {
     bgm.play("town");
     this.edit = false;
+    this.cols = colsOf(townOf(store.shop));
     this.drawGround();
     this.gridG = this.add.graphics().setDepth(1);
     this.layer = null;
+    const before = new Set(this.children.list);
     ambient(this, { depth: 50 }); // 時刻と天気の色は 建物の上・札の下
     topBar(this, { back: false });
     // 右上（町の地面の上の空）に レベルと もようがえ
@@ -35,8 +37,12 @@ export class Town extends Phaser.Scene {
     this.editLabel = text(this, W - 50, 98, "もようがえ", 15, "#ffffff", { stroke: "#4a2c17", strokeThickness: 5 }).setDepth(600);
     this.buyBtn = button(this, W - 140, 42, "plant", 56, () => { sfx.pop(); this.decorMenu(); }).setDepth(600);
     this.buyLabel = text(this, W - 140, 98, "かざりを かう", 15, "#ffffff", { stroke: "#4a2c17", strokeThickness: 5 }).setDepth(600);
-    this.redraw();
+    this.wideBtn = button(this, W - 230, 42, "park", 56, () => { sfx.pop(); this.expandMenu(); }).setDepth(600);
+    this.wideLabel = text(this, W - 230, 98, "まちを ひろげる", 15, "#ffffff", { stroke: "#4a2c17", strokeThickness: 5 }).setDepth(600);
     this.eventDeco();
+    for (const o of this.children.list) if (!before.has(o)) o.setScrollFactor(0); // 上の帯・ボタン・時刻の色・行事は 画面に固定
+    this.setupScroll();
+    this.redraw();
     this.time.delayedCall(300, () => this.showSummary());
   }
 
@@ -64,10 +70,41 @@ export class Town extends Phaser.Scene {
     this.tweens.add({ targets: box, y: 100, duration: 450, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
   }
 
+  // 町が 画面より ひろいとき：地面を 指で よこに すべらせて 見る（2026-10-16）。建物を押す のと 見分けるため 動いた きょりを おぼえる
+  setupScroll() {
+    const cam = this.cameras.main, worldW = this.cols * T;
+    cam.setBounds(0, 0, Math.max(W, worldW), H);
+    this.arrow = text(this, W - 24, H / 2 + 40, "▶", 40, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 6 }).setScrollFactor(0).setDepth(70);
+    this.arrowL = text(this, 24, H / 2 + 40, "◀", 40, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 6 }).setScrollFactor(0).setDepth(70);
+    const showArrows = () => { this.arrow.setVisible(cam.scrollX < worldW - W - 2); this.arrowL.setVisible(cam.scrollX > 2); };
+    showArrows();
+    this.input.on("pointerdown", p => { this.pan = { x: p.x, sx: cam.scrollX, moved: 0 }; });
+    this.input.on("pointermove", p => {
+      if (!this.pan || !p.isDown || this.itemDrag || worldW <= W) return;
+      this.pan.moved = Math.max(this.pan.moved, Math.abs(p.x - this.pan.x));
+      if (this.pan.moved > 12) { cam.scrollX = Phaser.Math.Clamp(this.pan.sx - (p.x - this.pan.x), 0, worldW - W); showArrows(); }
+    });
+  }
+  panned() { return this.pan && this.pan.moved > 12; }
+
+  expandMenu() {
+    const next = TOWN_EXPAND.find(e => e.cols > this.cols);
+    const P = panel(this, "まちを ひろげる", { w: 760, h: 360 });
+    if (!next) { P.L.add(text(this, W / 2, P.top + 170, "これ いじょうは ひろげられないよ", 24, "#4a2c17")); return; }
+    P.L.add(text(this, W / 2, P.top + 130, `みぎに ${next.cols - this.cols}マス ひろくなるよ（${this.cols} → ${next.cols}マス）`, 22, "#4a2c17"));
+    P.L.add(text(this, W / 2, P.top + 175, "ゆびで よこに すべらせて みられるよ", 18, "#7a4a1e"));
+    card(this, P.L, W / 2, P.top + 260, 320, 64, () => {
+      const r = expandTown(store.shop);
+      if (!r.ok) { sfx.no(); floatText(this, W / 2, P.top + 210, r.why === "nomoney" ? "おかねが たりないよ" : "できないよ", "#a0522d"); return; }
+      store.setShop(r.shop); sfx.star(); P.close(); this.scene.restart();
+    }, 0xffe28a);
+    P.L.add(text(this, W / 2, P.top + 260, `${coin(next.cost)}で ひろげる`, 22, "#7a4a1e"));
+  }
+
   // 上から見た芝生：マスごとに少しだけ色を変え、草の線を ちらす（毎回同じ並び）
   // 上から見た芝生（2026-10-16「のっぺりしている」→ むら・草・小さな花・はしの暗さで 奥行きを出す）。並びは毎回同じ
   drawGround() {
-    const g = this.add.graphics().setDepth(0);
+    const g = this.add.graphics().setDepth(0), W = this.cols * T; // 町の よこはば ぶん 描く（画面の はばの W を ここだけ 上書き）
     g.fillGradientStyle(0x9ccb62, 0x93c45a, 0x7fb04c, 0x76a845, 1).fillRect(0, 84, W, H - 84); // 左上が明るい（光が左上から）
     const rnd = (k, m) => ((k * 2654435761) >>> 0) % m;
     for (let k = 0; k < 260; k++) { // 色のむら（大小の うすい まる）
@@ -125,15 +162,15 @@ export class Town extends Phaser.Scene {
     const town = townOf(store.shop);
     this.gridG.clear();
     if (this.edit) {
-      this.gridG.fillStyle(0xffffff, 0.18).fillRect(0, TOWN_TOP, TOWN_COLS * T, TOWN_ROWS * T).lineStyle(1, 0xffffff, 0.6);
-      for (let i = 0; i <= TOWN_COLS; i++) this.gridG.lineBetween(i * T, TOWN_TOP, i * T, TOWN_TOP + TOWN_ROWS * T);
-      for (let j = 0; j <= TOWN_ROWS; j++) this.gridG.lineBetween(0, TOWN_TOP + j * T, TOWN_COLS * T, TOWN_TOP + j * T);
+      this.gridG.fillStyle(0xffffff, 0.18).fillRect(0, TOWN_TOP, this.cols * T, TOWN_ROWS * T).lineStyle(1, 0xffffff, 0.6);
+      for (let i = 0; i <= this.cols; i++) this.gridG.lineBetween(i * T, TOWN_TOP, i * T, TOWN_TOP + TOWN_ROWS * T);
+      for (let j = 0; j <= TOWN_ROWS; j++) this.gridG.lineBetween(0, TOWN_TOP + j * T, this.cols * T, TOWN_TOP + j * T);
     }
     // みち・せんろ の つながりを見るための 置き場所の一覧
     this.flats = {};
     for (const it of town.items) if (townSpec(it.kind).flat) this.flats[it.x + "," + it.y] = it.kind;
     for (const it of town.items) this.drawItem(it);
-    this.buyBtn.setVisible(this.edit); this.buyLabel.setVisible(this.edit);
+    this.buyBtn.setVisible(this.edit); this.buyLabel.setVisible(this.edit); this.wideBtn.setVisible(this.edit); this.wideLabel.setVisible(this.edit);
     this.editBtn.list[0].clear().fillStyle(this.edit ? 0xffe28a : 0xffffff, 1).fillCircle(0, 0, 34).lineStyle(5, 0xf0c27a, 1).strokeCircle(0, 0, 34);
     this.levelText.setText(`おみせ レベル ${shopLevel(store.shop)}`);
     this.showGuide();
@@ -178,7 +215,7 @@ export class Town extends Phaser.Scene {
     const z = this.add.zone(x0, y0, w, h).setOrigin(0).setDepth(60).setInteractive({ useHandCursor: true, draggable: true });
     this.layer.push(z);
     let dragged = false, red = null;
-    z.on("dragstart", () => { dragged = false; if (this.edit) c.setAlpha(0.85).setDepth(45); });
+    z.on("dragstart", () => { dragged = false; if (this.edit) { this.itemDrag = true; c.setAlpha(0.85).setDepth(45); } });
     z.on("drag", (_, x, y) => {
       if (!this.edit) return;
       dragged = true;
@@ -188,13 +225,14 @@ export class Town extends Phaser.Scene {
       red.setVisible(!ok);
     });
     z.on("dragend", () => {
+      this.itemDrag = false;
       if (!this.edit || !dragged) return;
       const r = moveTownItem(store.shop, it.id, Math.round(z.x / T), Math.round((z.y - TOWN_TOP) / T));
       if (r.ok) { store.setShop(r.shop); sfx.pop(); } else { sfx.no(); floatText(this, z.x + w / 2, z.y, "そこには おけないよ", "#a0522d"); }
       this.time.delayedCall(10, () => this.redraw());
     });
     z.on("pointerup", () => {
-      if (dragged) return;
+      if (dragged || this.panned()) return; // 町を すべらせた あとは 押した ことに しない
       if (this.edit) { if (!isBuilding(it.kind)) this.decorItemMenu(it); return; }
       if (!isBuilding(it.kind)) return;
       sfx.pop();

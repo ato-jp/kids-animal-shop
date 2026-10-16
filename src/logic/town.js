@@ -6,6 +6,19 @@ const clone = o => JSON.parse(JSON.stringify(o));
 export const townSpec = kind => TOWN_BUILDINGS[kind] || TOWN_DECOR[kind];
 export const isBuilding = kind => !!TOWN_BUILDINGS[kind];
 
+// 町の よこはば。2026-10-16「右へ 広げる」：お金で 10マスずつ（TOWN_EXPAND）。前の町は 20マス
+export const colsOf = town => town.cols || TOWN_COLS;
+export const TOWN_EXPAND = [{ cols: 30, cost: 3000 }, { cols: 40, cost: 8000 }];
+export function expandTown(shop) {
+  const town = clone(townOf(shop)), next = TOWN_EXPAND.find(e => e.cols > colsOf(town));
+  if (!next) return { shop, ok: false, why: "max" };
+  if (shop.money < next.cost) return { shop, ok: false, why: "nomoney" };
+  town.cols = next.cols;
+  const s = { ...clone(shop), town };
+  s.money -= next.cost; s.today.expense += next.cost;
+  return { shop: s, ok: true, cols: next.cols };
+}
+
 export function defaultTown() {
   return { version: TOWN_VERSION, items: TOWN_DEFAULT.map(([kind, x, y], i) => ({ id: "t" + (i + 1), kind, x, y })), nextId: TOWN_DEFAULT.length + 1 };
 }
@@ -18,7 +31,7 @@ export const townOf = shop => {
   for (const kind of Object.keys(TOWN_BUILDINGS)) {
     if (t.items.some(i => i.kind === kind)) continue;
     const sp = TOWN_BUILDINGS[kind], def = TOWN_DEFAULT.find(d => d[0] === kind);
-    const spots = [...(def ? [[def[1], def[2]]] : []), ...Array.from({ length: TOWN_COLS * TOWN_ROWS }, (_, k) => [k % TOWN_COLS, Math.floor(k / TOWN_COLS)])];
+    const cols = colsOf(t), spots = [...(def ? [[def[1], def[2]]] : []), ...Array.from({ length: cols * TOWN_ROWS }, (_, k) => [k % cols, Math.floor(k / cols)])];
     const at = spots.find(([x, y]) => canPlaceTown(t, x, y, sp.w, sp.h));
     if (at) t = { ...t, items: [...t.items, { id: "b_" + kind, kind, x: at[0], y: at[1] }] };
   }
@@ -37,7 +50,7 @@ export function railConnected(shop) {
   }
   while (queue.length) {
     const [x, y] = queue.shift();
-    if (x === 0 || x === TOWN_COLS - 1) return true;
+    if (x === 0 || x === colsOf(town) - 1) return true;
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const k = x + dx + "," + (y + dy);
       if (rails.has(k) && !seen.has(k)) { seen.add(k); queue.push([x + dx, y + dy]); }
@@ -47,7 +60,7 @@ export function railConnected(shop) {
 }
 
 export function canPlaceTown(town, x, y, w, h, skipId = null) {
-  if (x < 0 || y < 0 || x + w > TOWN_COLS || y + h > TOWN_ROWS) return false;
+  if (x < 0 || y < 0 || x + w > colsOf(town) || y + h > TOWN_ROWS) return false;
   return !town.items.some(it => {
     if (it.id === skipId) return false;
     const s = townSpec(it.kind);
@@ -70,7 +83,7 @@ export function buyTownDecor(shop, kind) {
   if (!d) return { shop, ok: false, reason: "none" };
   if (shop.money < d.price) return { shop, ok: false, reason: "nomoney" };
   const town = clone(townOf(shop));
-  for (let y = 0; y + d.h <= TOWN_ROWS; y++) for (let x = 0; x + d.w <= TOWN_COLS; x++) {
+  for (let y = 0; y + d.h <= TOWN_ROWS; y++) for (let x = 0; x + d.w <= colsOf(town); x++) {
     if (!canPlaceTown(town, x, y, d.w, d.h)) continue;
     const id = "t" + town.nextId++;
     town.items.push({ id, kind, x, y });
