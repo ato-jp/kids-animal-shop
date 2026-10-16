@@ -8,7 +8,7 @@ import { AQUATIC } from "../data/aquatic.js";
 import { FOODS, AQUATIC_FOOD } from "../data/foods.js";
 import { PENS, MAX_LEVEL, FOOTPRINT, GENKI_DOWN_RATE, GENKI_UP_RATE, CAPACITY, SHOP_SIZES } from "../data/pens.js";
 import { FURNITURE } from "../data/furniture.js";
-import { zooDay, EXHIBITS, allExhibits, ensureFacilities } from "./zoo.js";
+import { zooDay, EXHIBITS, allExhibits, ensureFacilities, spotFor } from "./zoo.js";
 import { DECOR, DEFAULT_DECOR, VISITOR_SPEND } from "../data/decor.js";
 import { SHINES, SHINE_IDS } from "../data/shine.js";
 import { marketRate } from "./rate.js";
@@ -18,7 +18,7 @@ import { BREEDS } from "../data/morphs.js";
 import { PLACES } from "../data/places.js";
 import { REWARDS } from "../data/rewards.js";
 import { AREAS, BAITS, RODS, BASE_WEIGHT, STAGE_OF, ZONE_OF } from "../data/fish.js";
-import { HOUR, floorHour, dateKey, gameYears, gameDays, nextMorning, season } from "./time.js";
+import { HOUR, floorHour, dateKey, gameYears, gameDays, nextMorning, season, GAME_YEAR_MS } from "./time.js";
 import { hash } from "./rng.js";
 
 // お金の単位は コイン（100円＝1コイン）。値段は現実の円を調べて100で割った
@@ -565,6 +565,15 @@ export function buyable() {
 export function buyAnimal(shop, kind, now, rng = Math.random) {
   const d = species(kind);
   if (!d || d.cost == null || !buyable().includes(kind)) return { shop, result: "notsold" };
+  if (d.market === "zoo" && !d.aquatic) { // ライオン・キリン・シマウマは どうぶつえんの おおきな ひろば へ じかに（2026-10-16 壁打ち9回め）
+    const ex0 = spotFor(shop, "zoo", kind);
+    if (!ex0) return { shop, result: "noroom", why: "nozoo" };
+    if (shop.money < d.cost) return { shop, result: "nomoney" };
+    const s = clone(shop), ex = s.zoo.exhibits.find(e => e.id === ex0.id);
+    ex.animals.push({ ...newAnimal("a" + s.nextId++, kind, now - (d.adult + 0.2) * GAME_YEAR_MS, rng, now), hunger: 1, clean: 1 });
+    spend(s, d.cost);
+    return { shop: s, result: "ok", zoo: ex.id };
+  }
   const pi = findPen(shop, kind);
   if (pi < 0) return { shop, result: "noroom", why: whyNoRoom(shop, kind) };
   if (shop.money < d.cost) return { shop, result: "nomoney" };
@@ -645,7 +654,8 @@ export function claimGift(shop, giftIdx, now, rng = Math.random) {
 export const WATER_OF_STAGE = { pond: "fresh", river: "fresh", sea: "sea" };
 export function hasTankRoom(shop, stage) {
   const water = WATER_OF_STAGE[stage];
-  return shop.pens.some(p => p.type === "tank" && waterOf(p) === water && usedSpace(p) + 1 <= capacity(p));
+  if (shop.pens.some(p => p.type === "tank" && waterOf(p) === water && usedSpace(p) + 1 <= capacity(p))) return true;
+  return (shop.aqua?.exhibits || []).some(e => e.type === water && !e.animals.length); // すいぞくかんの 空の すいそうでも よい（2026-10-16）
 }
 // 水槽を1つも持っていない お店に、空の水槽を1回だけ足す（はじめの水槽ができる前に作った お店のため。床に空きがあるときだけ）
 export function ensureStarterTank(shop) {

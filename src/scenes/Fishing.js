@@ -8,6 +8,7 @@
 // 釣れたら「すいそうに いれる」か「にがす」を選ぶ（いちばへは売らない）。1回の釣りは エサがなくなるか「かえる」まで。行くお金は つりば で払いずみ。
 import { store } from "../store.js";
 import * as S from "../logic/shop.js";
+import { keepToAqua, spotFor } from "../logic/zoo.js";
 import { newFight, step, SAFE } from "../logic/fishing.js";
 import { AREAS, BAITS, RARITY_NAME, FAR_FROM } from "../data/fish.js";
 import { season, timeOfDay } from "../logic/time.js";
@@ -383,18 +384,26 @@ export class Fishing extends Phaser.Scene {
       if (!k.ok) { sfx.no(); return; }
       store.setShop(k.shop); sfx.coin(); done("すいそうに いれたよ！");
     };
-    const pick = (x, label, color, fn, on = true) => {
-      const g = this.add.graphics().fillStyle(on ? color : 0xdddddd, 1).fillRoundedRect(x - 140, 476, 280, 60, 30);
-      const t = text(this, x, 506, label, 24, on ? "#ffffff" : "#999999", on ? { stroke: "#00000040", strokeThickness: 4 } : {});
-      const z = this.add.zone(x, 506, 280, 60).setInteractive({ useHandCursor: true });
+    const pick = (x, label, color, fn, on = true, bw = 280) => {
+      const g = this.add.graphics().fillStyle(on ? color : 0xdddddd, 1).fillRoundedRect(x - bw / 2, 476, bw, 60, 30);
+      const t = text(this, x, 506, label, bw < 280 ? 21 : 24, on ? "#ffffff" : "#999999", on ? { stroke: "#00000040", strokeThickness: 4 } : {});
+      const z = this.add.zone(x, 506, bw, 60).setInteractive({ useHandCursor: true });
       L.add([g, t, z]);
       if (on) z.on("pointerup", () => { sfx.pop(); fn(); });
     };
+    const toAqua = () => {
+      const k = keepToAqua(store.shop, this.kind, Date.now(), Math.random, this.shine);
+      if (!k.ok) { sfx.no(); return; }
+      store.setShop(k.shop); sfx.coin(); done("すいぞくかんに いれたよ！");
+    };
+    const aq = !!spotFor(store.shop, "aqua", this.kind); // 合う てんじに 空きが あるときだけ 3つめの ボタン
     this.time.delayedCall(400, () => {
       if (!L.active) return;
-      pick(W / 2 - 160, "すいそうに いれる", 0x2e9d6a, kept, r.canKeep);
-      pick(W / 2 + 160, "にがす", 0x5a8fd0, () => done("かえして あげたよ"));
-      if (!r.canKeep) L.add(text(this, W / 2, 553, r.why === "nopen" ? "おみせに すいそうを たてると いれられるよ" : MESSAGE[r.why] || "", 16, "#a0522d"));
+      const xs = aq ? [W / 2 - 240, W / 2, W / 2 + 240] : [W / 2 - 160, W / 2 + 160], bw = aq ? 220 : 280;
+      pick(xs[0], "すいそうに いれる", 0x2e9d6a, kept, r.canKeep, bw);
+      if (aq) pick(xs[1], "すいぞくかんへ", 0x1f6fb2, toAqua, true, bw);
+      pick(xs[xs.length - 1], "にがす", 0x5a8fd0, () => done("かえして あげたよ"), true, bw);
+      if (!r.canKeep && !aq) L.add(text(this, W / 2, 553, r.why === "nopen" ? "おみせに すいそうを たてると いれられるよ" : MESSAGE[r.why] || "", 16, "#a0522d"));
     });
   }
 }

@@ -121,6 +121,20 @@ function adultGift(s, kind, sex, now) {
   return { ...a, hunger: 1, clean: 1 };
 }
 
+// その子を 入れられる 園の てんじ（同じ しゅるいが いる てんじ → 空の てんじ の じゅん）
+export function spotFor(shop, f, kind) {
+  const ok = (shop[f]?.exhibits || []).filter(e => canShow(e, kind) === "ok");
+  return ok.find(e => e.animals.length) || ok[0] || null;
+}
+// 釣った魚を その場で すいぞくかんへ（2026-10-16 壁打ち9回め）。図鑑と 釣った数は landFish で のせ済み
+export function keepToAqua(shop, kind, now, rng = Math.random, shine = null) {
+  const ex0 = spotFor(shop, "aqua", kind);
+  if (!ex0) return { shop, ok: false, why: "noaqua" };
+  const s = clone(shop), ex = s.aqua.exhibits.find(e => e.id === ex0.id);
+  ex.animals.push(newAnimal("a" + s.nextId++, kind, now - 0.5 * GAME_YEAR_MS, rng, now, shine));
+  return { shop: s, ok: true, ex: ex.id };
+}
+
 export function canShow(ex, kind) {
   if (exhibitFor(kind) !== ex.type) return "type";
   if (ex.animals.length && ex.animals[0].kind !== kind) return "kind";
