@@ -343,11 +343,7 @@ export class Shop extends Phaser.Scene {
     pick(P.left + 160, 240, "❤ だいじに そだてる", purpose === "keep", () => redo(S.setPurpose(store.shop, penId, "keep")));
     pick(P.left + 380, 180, "🏷 はんばいよう", purpose === "sale", () => redo(S.setPurpose(store.shop, penId, "sale")));
     if (purpose === "sale") Object.entries(S.TIERS).forEach(([id, t], k) => pick(P.left + 580 + k * 125, 115, t.name, tier === id, () => redo(S.setTier(store.shop, penId, id))));
-    else {
-      const on = p.breed !== false;
-      pick(P.left + 600, 200, on ? "👶 あかちゃん OK" : "あかちゃん なし", on, () => redo(S.setBreed(store.shop, penId, !on)));
-      P.L.add(text(this, P.left + 720, P.top + 97, "うられないよ", 15, "#7a4a1e").setOrigin(0, 0.5));
-    }
+    else P.L.add(text(this, P.left + 520, P.top + 97, "うられないよ（あかちゃんは どうぶつえんで うまれるよ）", 15, "#7a4a1e").setOrigin(0, 0.5));
     }
     if (!p.animals.length) P.L.add(text(this, W / 2, H / 2 - 40, "まだ だれも いないよ。いちばで むかえよう", 30, "#4a2c17"));
     p.animals.slice(page * PER, page * PER + PER).forEach((a, i) => {

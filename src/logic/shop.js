@@ -8,7 +8,7 @@ import { AQUATIC } from "../data/aquatic.js";
 import { FOODS, AQUATIC_FOOD } from "../data/foods.js";
 import { PENS, MAX_LEVEL, FOOTPRINT, GENKI_DOWN_RATE, GENKI_UP_RATE, CAPACITY, SHOP_SIZES } from "../data/pens.js";
 import { FURNITURE } from "../data/furniture.js";
-import { zooDay } from "./zoo.js";
+import { zooDay, EXHIBITS } from "./zoo.js";
 import { DECOR, DEFAULT_DECOR, VISITOR_SPEND } from "../data/decor.js";
 import { SHINES, SHINE_IDS } from "../data/shine.js";
 import { marketRate } from "./rate.js";
@@ -184,39 +184,33 @@ export function setTier(shop, penId, tier) {
   p.tier = tier;
   return { shop: s, ok: true };
 }
-// ---- 赤ちゃん（第2弾。2026-10-16）----
-// だいじに そだてる 柵・水槽で、同じ種類の おとなの オスとメスが そろい、元気（0.5以上）で おなかが すいていなければ、
-// 1日に BREED_CHANCE の見こみで 生まれる（1回に 1〜litter ひき。柵の広さが たりない分は 生まれない）。
-// はんばいよう では 生まれない。柵ごとに breed:false で とめられる。色は 血統くじ（logic/breed.js）、キラキラは 親がキラキラなら2倍
+// ---- 赤ちゃん（第2弾 2026-10-16 → 同じ日 パパ決定で「どうぶつえん・すいぞくかん でだけ 生まれる」に変更）----
+// てんじ（logic/zoo.js）で 同じ種類の おとなの オスとメスが そろい、元気（0.5以上）なら、1日に BREED_CHANCE の見こみで 生まれる
+// （1回に 1〜litter ひき。てんじの広さが たりない分は 生まれない）。てんじごとに breed:false で とめられる。
+// 色は 血統くじ（logic/breed.js）、キラキラは 親がキラキラなら2倍。売りたい子は お店へ つれて行って 売る
 export const BREED_CHANCE = 0.3;
-export const canBreedIn = pen => purposeOf(pen) === "keep" && pen.breed !== false;
-export function setBreed(shop, penId, on) {
-  const s = clone(shop), p = s.pens.find(q => q.id === penId);
-  if (!p) return { shop, ok: false };
-  p.breed = !!on;
-  return { shop: s, ok: true };
-}
 function breedDay(s, next, dayIdx) {
-  for (const pen of s.pens) {
-    if (!canBreedIn(pen)) continue;
-    const ok = pen.animals.filter(a => BREEDS[a.kind] && !a.hospitalUntil && !a.sick && a.genki >= 0.5 && a.hunger >= BAD_BELOW && stage(a, next) === "adult");
+  if (!s.zoo) return;
+  for (const ex of s.zoo.exhibits) {
+    if (ex.breed === false) continue;
+    const cap = EXHIBITS[ex.type].cap, used = () => ex.animals.reduce((t, a) => t + species(a.kind).space, 0);
+    const ok = ex.animals.filter(a => BREEDS[a.kind] && !a.sick && a.genki >= 0.5 && stage(a, next) === "adult");
     for (const kind of [...new Set(ok.map(a => a.kind))]) {
       const dad = ok.find(a => a.kind === kind && a.sex === "m"), mom = ok.find(a => a.kind === kind && a.sex === "f");
-      if (!dad || !mom || hash(pen.id, dayIdx, kind, "baby") >= BREED_CHANCE) continue;
-      const n = 1 + Math.floor(hash(pen.id, dayIdx, kind, "n") * BREEDS[kind].litter);
+      if (!dad || !mom || hash(ex.id, dayIdx, kind, "baby") >= BREED_CHANCE) continue;
+      const n = 1 + Math.floor(hash(ex.id, dayIdx, kind, "n") * BREEDS[kind].litter);
       let k = 0;
-      const rng = () => hash(pen.id, dayIdx, kind, "r", k++);
+      const rng = () => hash(ex.id, dayIdx, kind, "r", k++);
       for (let i = 0; i < n; i++) {
-        if (usedSpace(pen) + species(kind).space > capacity(pen)) break;
+        if (used() + species(kind).space > cap) break;
         const { morph, line } = inherit(dad, mom, rng);
         const parentShine = shineOf(dad) || shineOf(mom);
         const sh = rollShine(parentShine ? () => rng() / 2 : rng);
-        const baby = { ...newAnimal("a" + s.nextId++, kind, next, rng, next, sh, morph), line, hunger: 0.8, natsuki: 0.5, mother: mom.id, father: dad.id };
-        pen.animals.push(baby);
+        ex.animals.push({ ...newAnimal("a" + s.nextId++, kind, next, rng, next, sh, morph), line, hunger: 1, clean: 1, natsuki: 0.5, mother: mom.id, father: dad.id });
         record(s, kind, sh);
-        s.birthsNew = [...(s.birthsNew || []), { t: next, kind, shine: sh, morph, pen: pen.id }].slice(-50);
+        s.birthsNew = [...(s.birthsNew || []), { t: next, kind, shine: sh, morph, ex: ex.id }].slice(-50);
       }
-      break; // 1つの柵で 1日に 1回まで
+      break; // 1つの てんじで 1日に 1回まで
     }
   }
 }
@@ -609,9 +603,15 @@ export function sell(shop, animalId, placeId, now) {
   const s = clone(shop), reward = priceOf(a, now), place = s.places[placeId];
   for (const p of s.pens) p.animals = p.animals.filter(x => x.id !== animalId);
   place.sent.push(a.kind);
-  place.points += Math.floor(reward / 100);
   s.today.sold += 1;
   earn(s, reward);
+  return { shop: s, ok: true, reward, gifts: addPoints(s, placeId, Math.floor(reward / 100)) };
+}
+
+// こうけん を足して、だんかいを こえた お返しを 届ける（s は 書きかえてよい写し）。届いた お返しの一覧を返す
+export function addPoints(s, placeId, points) {
+  const place = s.places[placeId];
+  place.points += points;
   const ladder = REWARDS[PLACES[placeId].kind], gifts = [];
   while (place.rewarded < ladder.length && place.points >= ladder[place.rewarded].points) {
     const g = { ...ladder[place.rewarded], from: placeId };
@@ -621,7 +621,7 @@ export function sell(shop, animalId, placeId, now) {
     else s.gifts.push(g);
     gifts.push(g);
   }
-  return { shop: s, ok: true, reward, gifts };
+  return gifts;
 }
 
 export function claimGift(shop, giftIdx, now, rng = Math.random) {

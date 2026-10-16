@@ -3,7 +3,7 @@
 // ・てんじ（展示）は 8わく。1つの てんじに 1しゅるい（本物の園と同じ）。お店の子を つれて来て 見せる
 // ・お世話は 飼育員さん（1ぴき 1日 ZOO_KEEP コイン）。おなかや そうじは 気にしなくてよい
 // ・お客さん＝（しゅるい×6 ＋ キラキラ×4 ＋ 数）×もん の倍率。壁打ちの「動物園では 外観が客足に大きく効く」を もんで表す
-import { species, findPen, whyNoRoom, shineOf, newAnimal } from "./shop.js";
+import { species, findPen, whyNoRoom, shineOf, newAnimal, placesFor, priceOf, addPoints } from "./shop.js";
 import { ANIMALS } from "../data/animals.js";
 import { gameYears, GAME_YEAR_MS } from "./time.js";
 
@@ -158,4 +158,26 @@ export function claimZooGift(shop, idx, exId, now, rng = Math.random) {
   s.zoo.gifts.splice(idx, 1);
   if (!s.seen.includes(kind)) s.seen.push(kind);
   return { shop: s, ok: true };
+}
+
+// てんじごとに 赤ちゃんを とめる／うませる
+export function setExhibitBreed(shop, exId, on) {
+  const s = clone(shop), ex = s.zoo?.exhibits.find(e => e.id === exId);
+  if (!ex) return { shop, ok: false };
+  ex.breed = !!on;
+  return { shop: s, ok: true };
+}
+
+// 園の子を ほかの 園・すいぞくかんへ ゆずる（お金は もらわない。こうけん が 売るときの半分 たまる）。
+// 園から出せない子（ペンギンなど）が ふえすぎたときの 行き先（2026-10-16 パパ決定）
+export function giveAway(shop, animalId, placeId, now) {
+  const ex = shop.zoo?.exhibits.find(e => e.animals.some(a => a.id === animalId));
+  if (!ex || !shop.places[placeId]) return { shop, ok: false, why: "none" };
+  const a = ex.animals.find(x => x.id === animalId);
+  if (!placesFor(a.kind).includes(placeId)) return { shop, ok: false, why: "place" };
+  const s = clone(shop), e = s.zoo.exhibits.find(x => x.id === ex.id);
+  e.animals = e.animals.filter(x => x.id !== animalId);
+  s.places[placeId].sent.push(a.kind);
+  const points = Math.max(1, Math.floor(priceOf(a, now) / 200));
+  return { shop: s, ok: true, points, gifts: addPoints(s, placeId, points) };
 }

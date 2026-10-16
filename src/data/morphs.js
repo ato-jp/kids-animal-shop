@@ -23,6 +23,8 @@ export const MORPHS = {
 
 // 赤ちゃんが生まれる生き物（家で増やせる と よく知られている もの）。litter は 1回に生まれる数の いちばん多いとき
 export const BREEDS = {
+  // どうぶつえんの子（2026-10-16 追加。数は よく知られた1回の出産・産卵の数をもとに ゲーム用に丸めた。出典は未確認）
+  penguin: { litter: 2 }, seal: { litter: 1 }, lion: { litter: 3 }, tiger: { litter: 3 }, zebra: { litter: 1 }, giraffe: { litter: 1 }, elephant: { litter: 1 },
   hamster: { litter: 3 }, rabbit: { litter: 2 }, cat: { litter: 2 }, dog: { litter: 2 },
   [aq("メダカ")]: { litter: 3 }, [aq("グッピー")]: { litter: 3 }, [aq("ザリガニ")]: { litter: 3 }, [aq("ウーパールーパー")]: { litter: 2 },
   [aq("リュウキン")]: { litter: 2 }, [aq("ランチュウ")]: { litter: 2 }, [aq("カクレクマノミ")]: { litter: 2 },

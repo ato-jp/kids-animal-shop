@@ -58,11 +58,15 @@ export class Station extends Phaser.Scene {
   }
 
   trainPanel(others) {
-    const P = panel(this, "だれの おみせに いく？", { w: 900, h: 420 });
+    const P = panel(this, "だれの おみせに いく？", { w: 900, h: 520 });
     others.forEach(([id, k], i) => {
       const x = W / 2 - ((others.length - 1) * 230) / 2 + i * 230, y = H / 2 + 10;
       card(this, P.L, x, y, 200, 220, () => { sfx.pop(); P.close(); this.scene.start("Shop", { visit: id }); });
       P.L.add([kidFace(this, x, y - 30, id, k, 110), text(this, x, y + 70, (k.name || "") + "の おみせ", 18, "#4a2c17")]);
+      if (k.shop?.zoo) { // 兄弟の どうぶつえんも 見に行ける（第3弾）
+        card(this, P.L, x, y + 150, 200, 56, () => { sfx.pop(); P.close(); this.scene.start("Zoo", { visit: id }); }, 0xd8f0c8);
+        P.L.add(text(this, x, y + 150, "🦁 どうぶつえん", 18, "#2e6b4f"));
+      }
     });
   }
 

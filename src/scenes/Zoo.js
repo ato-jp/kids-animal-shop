@@ -3,7 +3,7 @@ import { store } from "../store.js";
 import * as S from "../logic/shop.js";
 import * as Z from "../logic/zoo.js";
 import { AQUATIC } from "../data/aquatic.js";
-import { W, H, text, card, creature, panel, floatText, coin, burst } from "../ui/kit.js";
+import { W, H, text, card, creature, panel, floatText, coin, burst, button, guide } from "../ui/kit.js";
 import { topBar } from "../ui/topbar.js";
 import { MESSAGE } from "./Shop.js";
 import { sfx } from "../sound/sfx.js";
@@ -17,29 +17,34 @@ const say = why => WHY[why] || MESSAGE[why] || "できないよ";
 
 export class Zoo extends Phaser.Scene {
   constructor() { super("Zoo"); }
-  create() {
+  create({ visit } = {}) {
     bgm.play("town");
+    // 兄弟の どうぶつえんを 見に来たとき（えき の でんしゃ から）：見るだけ。← で えき に もどる（お店の見学と同じ形）
+    if (visit && visit !== store.family.current) { store.visitFrom = store.visitFrom || store.family.current; store.family.current = visit; }
+    this.visit = !!store.visitFrom;
     const shop = store.shop, z = shop.zoo, g = this.add.graphics();
     // 地面：芝生と 園内の小道
     g.fillGradientStyle(0x9fd47c, 0x9fd47c, 0x7fbf62, 0x7fbf62, 1).fillRect(0, 84, W, H - 84);
     for (let k = 0; k < 500; k++) g.fillStyle(k % 2 ? 0x8cc76c : 0xb2df90, 0.55).fillCircle((k * 131) % W, 90 + ((k * 71) % (H - 90)), 2 + (k % 3));
     g.fillStyle(0xe9d8b0, 1).fillRect(0, Y0 + SH + 2, W, GAP - 4);
-    topBar(this);
-    const name = store.kid?.name ? `${store.kid.name}の どうぶつえん` : "じぶんの どうぶつえん";
+    topBar(this, { back: !this.visit });
+    if (this.visit) button(this, W - 56, 42, "back", 48, () => { sfx.pop(); store.family.current = store.visitFrom; store.visitFrom = null; store.persist(); this.scene.start("Station"); }, { ring: 0x9fd3e6 }).setDepth(501);
+    const name = store.kid?.name ? `${store.kid.name}の どうぶつえん${this.visit ? "（みるだけ）" : ""}` : "じぶんの どうぶつえん";
     text(this, 40, 128, name, 30, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 7 }).setOrigin(0, 0.5);
     const y = shop.yesterday?.zooVisitors;
-    text(this, 700, 128, `きのう ${y ?? "—"}にん ・ あしたの よそう ${Z.zooVisitors(shop)}にん`, 22, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 6 });
+    if (!this.visit) text(this, 700, 128, `きのう ${y ?? "—"}にん ・ あしたの よそう ${Z.zooVisitors(shop)}にん`, 22, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 6 });
     // もん（客足が大きく ふえる）
     const gate = Z.GATES[z.gate];
-    card(this, this.add.container(0, 0), 1130, 128, 220, 52, () => { sfx.pop(); this.gateMenu(); }, 0xfff1c9);
+    card(this, this.add.container(0, 0), 1130, 128, 220, 52, () => { if (this.visit) return; sfx.pop(); this.gateMenu(); }, 0xfff1c9);
     text(this, 1130, 128, `🏯 ${gate.name}`, 20, "#7a4a1e");
     for (let i = 0; i < Z.ZOO_SLOTS; i++) {
       const ex = z.exhibits.find(e => e.slot === i);
-      ex ? this.exhibit(ex, ...slotXY(i)) : this.emptySlot(i, ...slotXY(i));
+      ex ? this.exhibit(ex, ...slotXY(i)) : !this.visit && this.emptySlot(i, ...slotXY(i));
     }
     const next = Z.ZOO_GIFTS[z.given || 0];
     if (next && !z.gifts?.length) text(this, W / 2, 668, `つぎの すいぞくかんからの おくりもの まで あと ${next.visitors - (z.total || 0)}にん`, 18, "#fff4a8", { stroke: "#2e6b4f", strokeThickness: 5 });
-    if (z.gifts?.length) this.giftBanner();
+    if (z.gifts?.length && !this.visit) this.giftBanner();
+    this.showGuide();
     text(this, W / 2, 698, `にゅうえんりょう 1にん ${Z.ZOO_FEE}コイン　しいくいんさん 1ぴき 1にち ${Z.ZOO_KEEP}コイン（${coin(Z.zooKeepCost(shop))}）`, 20, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 5 });
   }
 
@@ -79,7 +84,7 @@ export class Zoo extends Phaser.Scene {
     g.fillStyle(0x5b3a1f, 1).fillRoundedRect(x + 20, y + h + 6, SW - 40, 30, 10);
     text(this, x + SW / 2, y + h + 21, label, 17, "#fff4dc");
     const zone = this.add.zone(x + SW / 2, y + SH / 2, SW, SH).setInteractive({ useHandCursor: true });
-    zone.on("pointerup", () => { sfx.pop(); this.exhibitMenu(ex); });
+    zone.on("pointerup", () => { if (this.visit) return; sfx.pop(); this.exhibitMenu(ex); });
   }
 
   emptySlot(i, x, y) {
@@ -107,15 +112,11 @@ export class Zoo extends Phaser.Scene {
   // てんじを押したとき：いる子（押すと お店へ もどす）と、つれて来られる お店の子
   exhibitMenu(ex) {
     const shop = store.shop, P = panel(this, Z.EXHIBITS[ex.type].name, { w: 1120, h: 600 });
-    P.L.add(text(this, P.left + 40, P.top + 100, "いる こ（おすと おみせへ もどす。うるのは おみせで）", 20, "#7a4a1e").setOrigin(0, 0.5));
+    P.L.add(text(this, P.left + 40, P.top + 100, "いる こ（おすと おみせへ もどす・ほかの えんへ ゆずる）", 20, "#7a4a1e").setOrigin(0, 0.5));
     if (!ex.animals.length) P.L.add(text(this, P.left + 300, P.top + 170, "まだ だれも いないよ", 20, "#9a8a7a"));
     ex.animals.slice(0, 9).forEach((a, k) => {
       const x = P.left + 90 + k * 116, y = P.top + 175;
-      card(this, P.L, x, y, 104, 104, () => {
-        const r = Z.fromZoo(store.shop, a.id);
-        if (!r.ok) { sfx.no(); floatText(this, x, y - 70, say(r.why)); return; }
-        store.setShop(r.shop); sfx.pop(); P.close(); this.scene.restart();
-      }, 0xe9f6ff);
+      card(this, P.L, x, y, 104, 104, () => { sfx.pop(); this.animalMenu(a); }, 0xe9f6ff);
       P.L.add(creature(this, x, y, a.kind, 80, S.shineOf(a), S.paintOf(a)));
     });
     P.L.add(text(this, P.left + 40, P.top + 260, "おみせから つれて くる", 20, "#7a4a1e").setOrigin(0, 0.5));
@@ -130,6 +131,15 @@ export class Zoo extends Phaser.Scene {
       }, 0xfff6e0);
       P.L.add([creature(this, x, y - 6, a.kind, 76, S.shineOf(a), S.paintOf(a)), text(this, x, y + 40, S.species(a.kind).name, 13, "#4a2c17")]);
     });
+    if (ex.animals.length) { // 赤ちゃんを うませる／とめる
+      const on = ex.breed !== false, bx = P.left + P.w - 150, by = P.top + 100;
+      card(this, P.L, bx, by, 220, 44, () => {
+        const r = Z.setExhibitBreed(store.shop, ex.id, !on);
+        if (!r.ok) return;
+        store.setShop(r.shop); sfx.pop(); P.close(); this.exhibitMenu(r.shop.zoo.exhibits.find(e => e.id === ex.id));
+      }, on ? 0xffe28a : 0xf3ead8);
+      P.L.add(text(this, bx, by, on ? "👶 あかちゃん OK" : "あかちゃん なし", 18, "#4a2c17"));
+    }
     if (!ex.animals.length) {
       const bx = P.left + P.w - 130, by = P.top + 100;
       card(this, P.L, bx, by, 180, 44, () => {
@@ -139,6 +149,39 @@ export class Zoo extends Phaser.Scene {
       }, 0xf6d3cc);
       P.L.add(text(this, bx, by, "こわす", 18, "#a0522d"));
     }
+  }
+
+  // はじめて入った日の 案内：てんじを つくる → お店の子を つれて くる
+  showGuide() {
+    const z = store.shop.zoo;
+    if (this.visit) return;
+    const empty = z.exhibits.find(e => !e.animals.length);
+    if (empty) { const [x, y] = slotXY(empty.slot); guide(this, x + SW / 2, y + SH / 2 - 70, "おみせの こを つれて こよう", 60); return; }
+    if (z.exhibits.length < 2) { const free = [...Array(Z.ZOO_SLOTS).keys()].find(i => !z.exhibits.some(e => e.slot === i)); const [x, y] = slotXY(free); guide(this, x + SW / 2, y + SH / 2 - 70, "てんじを つくろう", 60); }
+  }
+
+  // てんじの子を押したとき：おみせへ もどす（売るのは おみせで）／ほかの えんへ ゆずる（こうけん が たまる）
+  animalMenu(a) {
+    const P = panel(this, S.shineName(a) + S.species(a.kind).name, { w: 900, h: 470 }), only = Z.zooOnly(a.kind);
+    P.L.add(creature(this, W / 2, P.top + 140, a.kind, 120, S.shineOf(a), S.paintOf(a)));
+    const go = (r, msg) => {
+      if (!r.ok) { sfx.no(); floatText(this, W / 2, P.top + 230, say(r.why)); return; }
+      store.setShop(r.shop); sfx.coin(); floatText(this, W / 2, P.top + 230, msg, "#2e7d32");
+      this.time.delayedCall(600, () => { P.close(); this.scene.restart(); });
+    };
+    if (!only) {
+      card(this, P.L, W / 2, P.top + 260, 360, 56, () => go(Z.fromZoo(store.shop, a.id), "おみせに もどったよ"), 0xe9f6ff);
+      P.L.add(text(this, W / 2, P.top + 260, "おみせへ もどす（うるなら こちら）", 19, "#4a2c17"));
+    } else P.L.add(text(this, W / 2, P.top + 260, "この こは どうぶつえんで くらす こ だよ", 19, "#7a4a1e"));
+    P.L.add(text(this, W / 2, P.top + 320, "ほかの えんへ ゆずる（こうけん が たまるよ）", 18, "#7a4a1e"));
+    S.placesFor(a.kind).forEach((id, k, all) => {
+      const x = W / 2 + (k - (all.length - 1) / 2) * 200, y = P.top + 385;
+      card(this, P.L, x, y, 186, 56, () => {
+        const r = Z.giveAway(store.shop, a.id, id, Date.now());
+        go(r, r.ok ? `ありがとう！ こうけん +${r.points}` : "");
+      }, 0xfff1c9);
+      P.L.add(text(this, x, y, store.shop.places[id].name, 14, "#4a2c17", { wordWrap: { width: 176, useAdvancedWrap: true } }));
+    });
   }
 
   // すいぞくかんから 届いた子：押すと かいすいの おおすいそう に入れる

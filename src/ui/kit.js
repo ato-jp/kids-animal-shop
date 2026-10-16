@@ -192,6 +192,8 @@ export function guide(scene, x, y, msg, depth = 650) {
   const finger = text(scene, 0, 34, "👆", 56);
   const t = text(scene, 0, 92, msg, 20, "#ffffff", { stroke: "#c0392b", strokeThickness: 7 });
   const ring = scene.add.circle(0, 0, 36).setStrokeStyle(5, 0xffe28a, 1);
+  const half = t.width / 2 + 10; // 画面の はしで 字が 切れないように ずらす
+  if (x + half > W) t.x = W - half - x; else if (x - half < 0) t.x = half - x;
   c.add([ring, finger, t]);
   scene.tweens.add({ targets: finger, y: 20, duration: 420, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
   scene.tweens.add({ targets: ring, scale: { from: 0.8, to: 1.3 }, alpha: { from: 1, to: 0 }, duration: 900, repeat: -1 });

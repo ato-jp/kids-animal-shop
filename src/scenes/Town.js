@@ -195,10 +195,12 @@ export class Town extends Phaser.Scene {
   // はじめての案内（お店レベル0の あいだ）：お世話 → つり → うる の順に、することを1つだけ 指で示す
   showGuide() {
     const shop = store.shop;
-    if (this.edit || shopLevel(shop) >= 1 || store.visitFrom) { guide(this, null); return; }
     const town = townOf(shop), at = kind => { const it = town.items.find(i => i.kind === kind), sp = townSpec(kind); return [it.x * T + (sp.w * T) / 2, TOWN_TOP + it.y * T + (sp.h * T) / 2]; };
+    if (this.edit || store.visitFrom) { guide(this, null); return; }
     let target = null;
-    if (this.badge("shop")) target = ["shop", "おせわを しよう"];
+    if (this.badge("zoo")) target = ["zoo", "どうぶつえんが かえるよ"]; // お店レベル2に なった日から
+    else if (shopLevel(shop) >= 1) { guide(this, null); return; }
+    else if (this.badge("shop")) target = ["shop", "おせわを しよう"];
     else if (!shop.fishCount) target = ["fishing", "つりに いこう"];
     else if (!shop.pens.some(p => p.purpose === "sale") && !(shop.earned > 100)) target = ["shop", "うる こを きめよう"];
     if (!target) { guide(this, null); return; }
@@ -288,7 +290,7 @@ export class Town extends Phaser.Scene {
   showBirths() {
     const list = store.shop.birthsNew || [];
     if (!list.length) { this.showSales(); return; }
-    const P = panel(this, "あかちゃんが うまれたよ！", { w: 900, h: 480, onClose: () => { store.setShop({ ...store.shop, birthsNew: [] }); this.showSales(); } });
+    const P = panel(this, "どうぶつえんで あかちゃんが うまれたよ！", { w: 900, h: 480, onClose: () => { store.setShop({ ...store.shop, birthsNew: [] }); this.showSales(); } });
     list.slice(-8).forEach((x, i) => {
       const cx = W / 2 - 300 + (i % 4) * 200, cy = H / 2 - 50 + Math.floor(i / 4) * 150;
       P.L.add(creature(this, cx, cy - 20, x.kind, 70, x.shine, x.morph ? MORPHS[x.kind]?.list[x.morph]?.paint : null));
