@@ -227,7 +227,7 @@ export class Town extends Phaser.Scene {
     if (kind === "shop") return all.some(([a, p]) => needs(a, p).length > 0);
     if (kind === "vet") return all.some(([a]) => a.sick && !a.hospitalUntil);
     if (kind === "station") return shop.gifts.length > 0;
-    if (kind === "aqua") return (shop.aqua?.gifts || []).length > 0;
+    if (kind === "aqua" || kind === "zoo") return (shop[kind]?.gifts || []).length > 0;
     if (kind === "zukan") return prizeReady(store.family, store.family.current);
     if (kind === "board") return boardFor(now).some(r => canFulfill(store.family, store.family.current, r, now) === "ok");
     return false;

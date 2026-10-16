@@ -206,7 +206,7 @@ function breedDay(s, next, dayIdx) {
         const { morph, line } = inherit(dad, mom, rng);
         const parentShine = shineOf(dad) || shineOf(mom);
         const sh = rollShine(parentShine ? () => rng() / 2 : rng);
-        ex.animals.push({ ...newAnimal("a" + s.nextId++, kind, next, rng, next, sh, morph), line, hunger: 1, clean: 1, natsuki: 0.5, mother: mom.id, father: dad.id });
+        ex.animals.push({ ...newAnimal("a" + s.nextId++, kind, next, rng, next, sh, morph), line, hunger: 1, clean: 1, natsuki: 0.5, mother: mom.id, father: dad.id, bornHere: true });
         record(s, kind, sh);
         s.bornCount = (s.bornCount || 0) + 1;
         s.birthsNew = [...(s.birthsNew || []), { t: next, kind, shine: sh, morph, ex: ex.id }].slice(-50);

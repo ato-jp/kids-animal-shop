@@ -12,13 +12,13 @@ import { bgm } from "../sound/bgm.js";
 const SW = 290, SH = 236, X0 = 36, Y0 = 168, GAP = 16;
 const slotXY = i => [X0 + (i % 4) * (SW + GAP), Y0 + Math.floor(i / 4) * (SH + GAP)];
 const SAMPLE = { land: "rabbit", big: "lion", cold: "penguin", fresh: "a01", sea: (AQUATIC.find(a => a.water === "sea") || {}).id };
-const WHY = { type: "この てんじでは くらせないよ", kind: "1つの てんじに 1しゅるい だよ", full: "いっぱいで もう はいらないよ", sick: "びょうきの こは つれて いけないよ", notempty: "なかの こを もどしてから だよ", zooonly: "この こは どうぶつえんで くらす こ だよ" };
+const WHY = { type: "この てんじでは くらせないよ", kind: "1つの てんじに 1しゅるい だよ", full: "いっぱいで もう はいらないよ", sick: "びょうきの こは つれて いけないよ", notempty: "なかの こを もどしてから だよ", zooonly: "この こは どうぶつえんで くらす こ だよ", ninki: "にんきが まだ たりないよ" };
 const say = why => WHY[why] || MESSAGE[why] || "できないよ";
 
 export class Zoo extends Phaser.Scene {
   constructor() { super("Zoo"); }
   create({ visit, f = "zoo" } = {}) {
-    bgm.play("town");
+    bgm.play(f);
     this.f = f;
     // 兄弟の 園を 見に来たとき（えき の でんしゃ から）：見るだけ。← で えき に もどる（お店の見学と同じ形）
     if (visit && visit !== store.family.current) { store.visitFrom = store.visitFrom || store.family.current; store.family.current = visit; }
@@ -38,7 +38,9 @@ export class Zoo extends Phaser.Scene {
     if (this.visit) button(this, W - 56, 42, "back", 48, () => { sfx.pop(); store.family.current = store.visitFrom; store.visitFrom = null; store.persist(); this.scene.start("Station"); }, { ring: 0x9fd3e6 }).setDepth(501);
     const title = `${store.kid?.name ? store.kid.name + "の " : ""}${lv.name} ${Z.FACILITIES[f].name}${this.visit ? "（みるだけ）" : ""}`;
     text(this, 40, 128, title, 28, "#ffffff", { stroke: f === "zoo" ? "#2e6b4f" : "#0b2236", strokeThickness: 7 }).setOrigin(0, 0.5);
-    if (!this.visit) text(this, 700, 128, `きのう ${z.yesterday ?? "—"}にん ・ あしたの よそう ${Z.zooVisitors(shop, f)}にん`, 20, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 6 });
+    const nk = Z.ninki(shop, f), nextLv = Z.LEVELS[z.level + 1];
+    text(this, 690, 116, `⭐ にんき ${nk}${nextLv ? `（つぎは ${nextLv.need}）` : ""}`, 20, "#fff4a8", { stroke: "#2e6b4f", strokeThickness: 6 });
+    if (!this.visit) text(this, 690, 144, `きのう ${z.yesterday ?? "—"}にん ・ あしたの よそう ${Z.zooVisitors(shop, f)}にん`, 17, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 5 });
     // 大きくする（だんかい。お客さんの倍率と てんじの数が ふえる）
     card(this, this.add.container(0, 0), 1140, 128, 200, 52, () => { if (this.visit) return; sfx.pop(); this.levelMenu(); }, Z.LEVELS[z.level + 1] ? 0xfff1c9 : 0xe6f4dc);
     text(this, 1140, 128, Z.LEVELS[z.level + 1] ? "🏗 おおきく する" : "⭐ いちばん おおきい", 18, "#7a4a1e");
@@ -48,12 +50,10 @@ export class Zoo extends Phaser.Scene {
       else if (i >= lv.slots) this.lockedSlot(x, y);
       else if (!this.visit) this.emptySlot(i, x, y);
     }
-    if (f === "aqua") {
-      const next = Z.ZOO_GIFTS[z.given || 0];
-      if (!z.penguinsGiven && !this.visit) text(this, W / 2, 668, "「ちいさな すいぞくかん」に すると ペンギンが くるよ", 18, "#fff4a8", { stroke: "#0b2236", strokeThickness: 5 });
-      else if (next && !z.gifts?.length) text(this, W / 2, 668, `つぎの おくりもの まで あと ${next.visitors - (z.total || 0)}にん`, 18, "#fff4a8", { stroke: "#0b2236", strokeThickness: 5 });
-      if (z.gifts?.length && !this.visit) this.giftBanner();
-    }
+    const lvGift = nextLv?.gift?.[f], hint = { stroke: "#0b2236", strokeThickness: 5 };
+    if (z.gifts?.length && !this.visit) this.giftBanner();
+    else if (lvGift && !this.visit) text(this, W / 2, 668, `「${nextLv.name} ${Z.FACILITIES[f].name}」に すると ${S.species(lvGift).name}が くるよ`, 18, "#fff4a8", hint);
+    else if (f === "aqua" && Z.ZOO_GIFTS[z.given || 0] && !this.visit) text(this, W / 2, 668, `つぎの おくりもの まで あと ${Z.ZOO_GIFTS[z.given || 0].visitors - (z.total || 0)}にん`, 18, "#fff4a8", hint);
     this.showGuide();
     text(this, W / 2, 698, `にゅうえんりょう 1にん ${Z.ZOO_FEE}コイン　しいくいんさん 1ぴき 1にち ${Z.ZOO_KEEP}コイン（${coin(Z.zooKeepCost(shop, f))}）`, 18, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 5 });
   }
@@ -210,24 +210,25 @@ export class Zoo extends Phaser.Scene {
   giftBanner() {
     const c = this.add.container(W / 2, 664).setDepth(50);
     const g = this.add.graphics().fillStyle(0xff7a59, 1).fillRoundedRect(-200, -22, 400, 44, 22);
-    c.add([g, text(this, 0, 0, `🎁 おくりものが とどいたよ（${store.shop.aqua.gifts.length}）`, 20, "#ffffff")]);
+    c.add([g, text(this, 0, 0, `🎁 おくりものが とどいたよ（${store.shop[this.f].gifts.length}）`, 20, "#ffffff")]);
     this.tweens.add({ targets: c, scale: 1.06, duration: 500, yoyo: true, repeat: -1 });
     const zone = this.add.zone(W / 2, 664, 400, 44).setDepth(51).setInteractive({ useHandCursor: true });
     zone.on("pointerup", () => { sfx.pop(); this.giftMenu(); });
   }
 
   giftMenu() {
-    const z = store.shop.aqua, P = panel(this, "すいぞくかんへの おくりもの", { w: 900, h: 440 });
-    z.gifts.forEach((kind, k) => {
-      const x = W / 2 + (k - (z.gifts.length - 1) / 2) * 220, y = P.top + 220;
+    const z = store.shop[this.f], P = panel(this, `${Z.FACILITIES[this.f].name}への おくりもの`, { w: 1000, h: 440 });
+    z.gifts.slice(0, 4).forEach((g0, k, list) => {
+      const g = Z.giftOf(g0), kind = g.kind;
+      const x = W / 2 + (k - (list.length - 1) / 2) * 220, y = P.top + 220;
       card(this, P.L, x, y, 200, 230, () => {
         const ex = z.exhibits.find(e => Z.canShow(e, kind) === "ok");
-        if (!ex) { sfx.no(); floatText(this, x, y - 140, kind === "penguin" ? "こおりの いけ を つくってね" : "かいすいの すいそう を つくってね"); return; }
+        if (!ex) { sfx.no(); floatText(this, x, y - 140, `${Z.EXHIBITS[Z.exhibitFor(kind)].name} を つくってね`); return; }
         const r = Z.claimZooGift(store.shop, k, ex.id, Date.now());
         if (!r.ok) { sfx.no(); floatText(this, x, y - 140, say(r.why)); return; }
         store.setShop(r.shop); sfx.coin(); P.close(); this.scene.restart({ f: this.f });
       }, 0xe9f6ff);
-      P.L.add([creature(this, x, y - 30, kind, 130), text(this, x, y + 80, S.species(kind).name, 20, "#4a2c17")]);
+      P.L.add([creature(this, x, y - 30, kind, 130), text(this, x, y + 80, S.species(kind).name + (g.sex ? (g.sex === "m" ? " ♂" : " ♀") : ""), 20, "#4a2c17")]);
     });
     P.L.add(text(this, W / 2, P.top + P.h - 40, "おすと てんじに いれるよ", 18, "#7a4a1e"));
   }
@@ -238,14 +239,17 @@ export class Zoo extends Phaser.Scene {
     P.L.add(text(this, W / 2, P.top + 120, `いま：${now.name} ${name}（てんじ ${now.slots}・おきゃくさん ×${now.k}）`, 22, "#4a2c17"));
     if (!next) { P.L.add(text(this, W / 2, P.top + 220, "いちばん おおきい よ！", 26, "#2e7d32")); return; }
     P.L.add(text(this, W / 2, P.top + 180, `つぎ：${next.name} ${name}（てんじ ${next.slots}・おきゃくさん ×${next.k}）`, 22, "#4a2c17"));
-    if (this.f === "aqua" && !z.penguinsGiven) P.L.add(text(this, W / 2, P.top + 225, "🐧 ペンギンが 2わ やってくるよ", 20, "#1f6fb2"));
-    card(this, P.L, W / 2, P.top + 310, 320, 64, () => {
+    const nk = Z.ninki(store.shop, this.f), gift = next.gift?.[this.f];
+    P.L.add(text(this, W / 2, P.top + 225, `⭐ にんき ${nk} / ${next.need}${nk < next.need ? `（あと ${next.need - nk}。しゅるいを ふやすと あがるよ）` : " OK！"}`, 19, nk < next.need ? "#c0392b" : "#2e7d32"));
+    if (gift) P.L.add(text(this, W / 2, P.top + 258, `🎉 おいわいに ${S.species(gift).name}が 2ひき やってくるよ`, 19, "#1f6fb2"));
+    card(this, P.L, W / 2, P.top + 330, 320, 60, () => {
       const r = Z.upgradeFacility(store.shop, this.f, Date.now());
       if (!r.ok) { sfx.no(); floatText(this, W / 2, P.top + 250, say(r.why)); return; }
       store.setShop(r.shop); sfx.star(); P.close();
       if (r.penguins) floatText(this, W / 2, 300, "ペンギンが やってきた！", "#ffffff");
+      if (r.gift) floatText(this, W / 2, 300, `${S.species(r.gift).name}が とどいたよ！`, "#ffffff");
       this.time.delayedCall(r.penguins ? 900 : 0, () => this.scene.restart({ f: this.f }));
     }, 0xffe28a);
-    P.L.add(text(this, W / 2, P.top + 310, `${coin(next.cost)}で おおきく する`, 22, "#7a4a1e"));
+    P.L.add(text(this, W / 2, P.top + 330, `${coin(next.cost)}で おおきく する`, 22, "#7a4a1e"));
   }
 }

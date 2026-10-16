@@ -13,14 +13,21 @@ export const FACILITIES = {
   zoo: { name: "どうぶつえん", types: ["land", "big"], icon: "lion" },
   aqua: { name: "すいぞくかん", types: ["fresh", "sea", "cold"], icon: "dolphin" },
 };
+// need＝大きくするのに要る にんき（2026-10-16 壁打ち5回め：お金＋にんき）。gift＝大きくした お祝いに届く子（オス・メス）
 export const LEVELS = [
-  { name: "おんぼろ", slots: 2, k: 1, cost: 0 },
-  { name: "ちいさな", slots: 3, k: 1.3, cost: 800 },
-  { name: "ふつうの", slots: 4, k: 1.6, cost: 2000 },
-  { name: "きれいな", slots: 5, k: 2, cost: 4500 },
-  { name: "りっぱな", slots: 6, k: 2.5, cost: 9000 },
-  { name: "おおきな", slots: 8, k: 3, cost: 15000 },
+  { name: "おんぼろ", slots: 2, k: 1, cost: 0, need: 0 },
+  { name: "ちいさな", slots: 3, k: 1.3, cost: 800, need: 8, gift: { aqua: "penguin" } },
+  { name: "ふつうの", slots: 4, k: 1.6, cost: 2000, need: 25, gift: { zoo: "zebra", aqua: "seal" } },
+  { name: "きれいな", slots: 5, k: 2, cost: 4500, need: 50, gift: { zoo: "lion" } },
+  { name: "りっぱな", slots: 6, k: 2.5, cost: 9000, need: 90, gift: { zoo: "giraffe" } },
+  { name: "おおきな", slots: 8, k: 3, cost: 15000, need: 150, gift: { zoo: "elephant" } },
 ];
+// にんき＝しゅるい×6 ＋ あたま数 ＋ キラキラ（ブロンズ2・シルバー4・ゴールド8・レインボー16）＋ ここで生まれた子×2
+const SHINE_NINKI = { bronze: 2, silver: 4, gold: 8, rainbow: 16 };
+export function ninki(shop, f) {
+  const all = facAnimals(shop, f);
+  return new Set(all.map(a => a.kind)).size * 6 + all.length + all.reduce((t, a) => t + (SHINE_NINKI[shineOf(a)] || 0) + (a.bornHere ? 2 : 0), 0);
+}
 export const MAX_SLOTS = 8;
 export const EXHIBITS = {
   land: { name: "どうぶつの ひろば", cost: 300, cap: 12 },
@@ -88,6 +95,7 @@ export function removeExhibit(shop, exId) {
 export function upgradeFacility(shop, f, now = Date.now()) {
   const fac = shop[f], next = fac && LEVELS[fac.level + 1];
   if (!next) return { shop, ok: false, why: "max" };
+  if (ninki(shop, f) < next.need) return { shop, ok: false, why: "ninki" };
   if (shop.money < next.cost) return { shop, ok: false, why: "nomoney" };
   const s = clone(shop);
   s.money -= next.cost; s.today.expense += next.cost; s[f].level += 1;
@@ -100,9 +108,11 @@ export function upgradeFacility(shop, f, now = Date.now()) {
       ex.animals.push(adultGift(s, "penguin", "m", now), adultGift(s, "penguin", "f", now));
       s.aqua.exhibits.push(ex);
       if (!s.seen.includes("penguin")) s.seen.push("penguin");
-    } else s.aqua.gifts.push("penguin", "penguin");
+    } else s.aqua.gifts.push({ kind: "penguin", sex: "m" }, { kind: "penguin", sex: "f" });
   }
-  return { shop: s, ok: true, penguins };
+  const g = next.gift && next.gift[f]; // ペンギン いがいの お祝い：おくりもの に入れる（合う てんじを つくって 受けとる）
+  if (g && g !== "penguin") { s[f].gifts = [...(s[f].gifts || []), { kind: g, sex: "m" }, { kind: g, sex: "f" }]; if (!s.seen.includes(g)) s.seen.push(g); }
+  return { shop: s, ok: true, penguins, gift: g && g !== "penguin" ? g : null };
 }
 // 寄贈の 陸の子は 大人で来る（水の子は 釣れた時点で大人と同じ扱い）
 function adultGift(s, kind, sex, now) {
@@ -148,10 +158,7 @@ export function fromZoo(shop, animalId) {
 
 export function zooVisitors(shop, f) {
   if (!f) return zooVisitors(shop, "zoo") + zooVisitors(shop, "aqua");
-  const all = facAnimals(shop, f);
-  if (!all.length) return 0;
-  const kinds = new Set(all.map(a => a.kind)).size, shines = all.filter(a => shineOf(a)).length;
-  return Math.round((kinds * 6 + shines * 4 + all.length) * LEVELS[shop[f].level].k);
+  return Math.round(ninki(shop, f) * LEVELS[shop[f].level].k); // お客さん＝にんき×だんかいの倍率
 }
 export const zooKeepCost = (shop, f) => (f ? facAnimals(shop, f) : zooAnimals(shop)).length * ZOO_KEEP;
 
@@ -178,14 +185,15 @@ export function zooDay(s, next) {
 }
 
 // 届いた子を てんじに入れる（すいぞくかん）。入れたら 図鑑にのる（もらった＝自分で手に入れた子）
+export const giftOf = g => (typeof g === "string" ? { kind: g } : g); // 前は 種類の名前だけ だった
 export function claimZooGift(shop, idx, exId, now, rng = Math.random) {
-  const kind = shop.aqua?.gifts?.[idx], hit = findEx(shop, exId);
+  const hit = findEx(shop, exId), g = hit && shop[hit.f].gifts?.[idx] && giftOf(shop[hit.f].gifts[idx]), kind = g && g.kind;
   if (!kind || !hit) return { shop, ok: false, why: "none" };
   const why = canShow(hit.ex, kind);
   if (why !== "ok") return { shop, ok: false, why };
   const s = clone(shop), e = findEx(s, exId).ex;
-  e.animals.push(ANIMALS[kind] ? adultGift(s, kind, null, now) : newAnimal("a" + s.nextId++, kind, now, rng, now, null, null));
-  s.aqua.gifts.splice(idx, 1);
+  e.animals.push(ANIMALS[kind] ? adultGift(s, kind, g.sex, now) : newAnimal("a" + s.nextId++, kind, now, rng, now, null, null));
+  s[hit.f].gifts.splice(idx, 1);
   if (!s.seen.includes(kind)) s.seen.push(kind);
   return { shop: s, ok: true };
 }
