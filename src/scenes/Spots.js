@@ -36,12 +36,15 @@ export class Spots extends Phaser.Scene {
     });
 
     // いま釣れる生き物のかげ
-    const list = S.catchable(area, sea, tod, w);
-    text(this, 90, 330, "いま つれる", 20, "#24435a").setOrigin(0, 0.5);
-    list.slice(0, 11).forEach((a, i) => {
-      const x = 260 + i * 92, seen = shop.seen.includes(a.id);
-      const c = creature(this, x, 330, a.id, 70);
-      if (!seen) c.setTint(0x000000).setAlpha(0.3);
+    // 2026-10-16：2だんで 28しゅるいまで。会ったことのない子は かげ＋「？」、その数も出す（図鑑を うめる めじるし）
+    const list = S.catchable(area, sea, tod, w), fresh = list.filter(a => !shop.seen.includes(a.id)).length;
+    this.add.rectangle(W / 2, 338, W - 40, 112, 0xffffff, 0.78).setStrokeStyle(2, 0xc9dbe6); // 絵の上でも 見えるように 白い台
+    text(this, 40, 312, `いま つれる ${list.length}しゅるい`, 18, "#24435a").setOrigin(0, 0.5);
+    if (fresh) text(this, 40, 344, `はじめての こ ${fresh}`, 18, "#c0392b").setOrigin(0, 0.5);
+    list.slice(0, 28).forEach((a, i) => {
+      const x = 250 + (i % 14) * 72, y = 310 + Math.floor(i / 14) * 56, seen = shop.seen.includes(a.id);
+      const c = creature(this, x, y, a.id, 52);
+      if (!seen) { c.setTint(0x000000).setAlpha(0.3); text(this, x + 18, y - 16, "？", 16, "#c0392b"); }
     });
 
     // エサ

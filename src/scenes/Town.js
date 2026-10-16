@@ -152,6 +152,9 @@ export class Town extends Phaser.Scene {
     if (sp.flat) {
       const has = (dx, dy) => this.flats[(it.x + dx) + "," + (it.y + dy)] === it.kind;
       c.add(this.drawFlat(it.kind, { up: has(0, -1), down: has(0, 1), left: has(-1, 0), right: has(1, 0) }));
+    } else if (this.facKey(it.kind)) { // どうぶつえん・すいぞくかん：だんかいごとの絵（2026-10-16）
+      fit(this.facKey(it.kind), 30);
+      this.extras(it, c, w, h, sp, x0, y0);
     } else if (this.textures.exists("tn_" + it.kind)) {
       fit("tn_" + it.kind, isBuilding(it.kind) ? 30 : 16); // 見下ろしの絵
       if (isBuilding(it.kind)) this.extras(it, c, w, h, sp, x0, y0);
@@ -197,6 +200,14 @@ export class Town extends Phaser.Scene {
       sfx.pop();
       if (sp.to) this.scene.start(sp.to, sp.data); else floatText(this, x0 + w / 2, y0, sp.lockedMsg, "#a0522d");
     });
+  }
+
+  // だんかいの絵が あれば その名前（tn_zoo_3 など。いまの だんかいの絵が まだなら 下の だんかいの絵）
+  facKey(kind) {
+    const fac = (kind === "zoo" || kind === "aqua") && store.shop[kind];
+    if (!fac) return null;
+    for (let l = fac.level; l >= 0; l--) if (this.textures.exists(`tn_${kind}_${l}`)) return `tn_${kind}_${l}`;
+    return null;
   }
 
   // どうぶつえん・すいぞくかん：名前に いまの だんかい（おんぼろ → おおきな）
@@ -247,7 +258,7 @@ export class Town extends Phaser.Scene {
     }
     if (it.kind === "shop") c.add(kidFace(this, w - 26, 20, store.family.current, store.kid, 46));
     const fac = (it.kind === "zoo" || it.kind === "aqua") && store.shop[it.kind];
-    if (fac && fac.level < 2) for (const im of c.list) if (im.type === "Image" && im.enableFilters) { // おんぼろ・ちいさな は 古びた色
+    if (fac && fac.level < 2 && !this.facKey(it.kind)) for (const im of c.list) if (im.type === "Image" && im.enableFilters) { // おんぼろ・ちいさな は 古びた色
       im.enableFilters(); const cm = im.filters.internal.addColorMatrix().colorMatrix; cm.sepia(); cm.saturate(fac.level ? -0.2 : -0.45, true);
     }
     if (!sp.to) c.setAlpha(0.7);
