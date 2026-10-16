@@ -729,3 +729,35 @@ export function renamePlace(shop, placeId, name) {
   s.places[placeId].name = name.trim();
   return s;
 }
+
+// ---- ふれあい（2026-10-16 壁打ち2回め）----
+// なでる：なつき度が 少し上がる（1ぴき 1日 PET_DAY まで）。あそぶ：柵の みんなの げんきが 少し上がる（1つの柵で 1日 PLAY_DAY 回まで）
+export const PET_STEP = 0.02, PET_DAY = 0.1, PLAY_STEP = 0.05, PLAY_DAY = 3;
+const findAnimal = (s, id) => { for (const p of s.pens) { const a = p.animals.find(x => x.id === id); if (a) return { p, a }; } return null; };
+export function pet(shop, animalId, now) {
+  const s = clone(shop), hit = findAnimal(s, animalId), day = dateKey(now);
+  if (!hit) return { shop, ok: false };
+  const a = hit.a;
+  if (a.petDay !== day) { a.petDay = day; a.petGain = 0; }
+  if (a.petGain >= PET_DAY) return { shop: s, ok: true, gained: 0 }; // きょうは もう いっぱい（でも 喜ぶ）
+  const g = Math.min(PET_STEP, PET_DAY - a.petGain, 1 - a.natsuki);
+  a.natsuki += g; a.petGain += PET_STEP;
+  return { shop: s, ok: true, gained: g };
+}
+export function play(shop, penId, now) {
+  const s = clone(shop), p = s.pens.find(q => q.id === penId), day = dateKey(now);
+  if (!p) return { shop, ok: false };
+  if (p.playDay !== day) { p.playDay = day; p.playCount = 0; }
+  if (p.playCount >= PLAY_DAY) return { shop: s, ok: true, gained: 0 };
+  p.playCount += 1;
+  for (const a of p.animals) if (!a.hospitalUntil && !a.sick) a.genki = Math.min(1, a.genki + PLAY_STEP);
+  return { shop: s, ok: true, gained: PLAY_STEP };
+}
+// 名前：字が打てない子のために 用意した名前から えらぶ（data/names.js）。"" で なしに もどす
+export function nameAnimal(shop, animalId, name) {
+  const s = clone(shop);
+  const hit = findAnimal(s, animalId) || (s.zoo && s.zoo.exhibits.flatMap(e => e.animals).filter(a => a.id === animalId).map(a => ({ a }))[0]);
+  if (!hit) return { shop, ok: false };
+  hit.a.name = String(name).slice(0, 8);
+  return { shop: s, ok: true };
+}

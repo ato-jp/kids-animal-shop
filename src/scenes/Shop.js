@@ -2,6 +2,7 @@
 // ふだん：下の道具を選んで柵を押すと、その柵の子みんなにお世話。道具なしで柵を押すと、中の子のようすと「うる」。
 // もようがえ：柵や家具を指で引っぱって動かす。たてる・かぐ・ひろげる・かざり もここから。
 import { store } from "../store.js";
+import { NAMES } from "../data/names.js";
 import * as S from "../logic/shop.js";
 import { marketRate } from "../logic/rate.js";
 import { gameYears, season } from "../logic/time.js";
@@ -57,6 +58,51 @@ export class Shop extends Phaser.Scene {
     this.game.events.on("shop-changed", onChange);
     this.events.once("shutdown", () => this.game.events.off("shop-changed", onChange));
     if (openPen) this.penPanel(openPen);
+    this.startCustomers();
+  }
+
+  // 歩き回る お客さん（2026-10-16 壁打ち2回め）：お店が あいている時間（9〜19時）に 入ってきて 柵を のぞいて 帰る。
+  // 売れた子が ふえたら（advance の customersBuy）、その子を だいて 帰る人を 出す。売れ方の計算は 変えない（見せるだけ）
+  startCustomers() {
+    this.people = 0;
+    this.lastSales = (store.shop.salesNew || []).length;
+    const open = () => { const h = new Date().getHours(); return h >= S.OPEN_HOURS[0] && h < S.OPEN_HOURS[1]; };
+    this.time.addEvent({ delay: 2500, loop: true, callback: () => {
+      if (!open() || this.edit || this.people >= 3 || !store.shop.pens.some(p => p.animals.length)) return;
+      if (Math.random() < 0.5) this.customer(null);
+    } });
+    const onSale = () => {
+      const n = (store.shop.salesNew || []).length;
+      if (n > this.lastSales) (store.shop.salesNew || []).slice(this.lastSales).slice(-3).forEach((x, i) => this.time.delayedCall(i * 1500, () => this.customer(x)));
+      this.lastSales = n;
+    };
+    this.game.events.on("shop-changed", onSale);
+    this.events.once("shutdown", () => this.game.events.off("shop-changed", onSale));
+    this.time.delayedCall(800, () => open() && this.customer(null));
+  }
+
+  customer(sold) {
+    const shop = store.shop, pens = shop.pens.filter(p => p.animals.length);
+    if (!pens.length) return;
+    const sale = pens.filter(p => S.purposeOf(p) === "sale"), pool = sale.length && Math.random() < 0.7 ? sale : pens;
+    const pen = pool[Math.floor(Math.random() * pool.length)], [fw, fh] = S.footprint(pen), [px, py] = this.toScreen(pen.x, pen.y);
+    const tx = px + (fw * this.tile) / 2 + (Math.random() * 40 - 20), ty = Math.min(AREA.y + AREA.h - 30, py + fh * this.tile + 26);
+    const who = ["man", "woman", "boy", "girl"][Math.floor(Math.random() * 4)];
+    const c = this.add.container(-60, AREA.y + AREA.h - 40).setDepth(20);
+    const body = img(this, 0, 0, who, 72);
+    c.add([this.add.ellipse(0, 34, 50, 14, 0x000000, 0.18), body]);
+    this.people++;
+    this.tweens.add({ targets: body, y: -6, duration: 220, yoyo: true, repeat: -1 }); // てくてく
+    const walk = (x, y, then) => this.tweens.add({ targets: c, x, y, duration: Math.max(600, Math.hypot(x - c.x, y - c.y) * 5), onComplete: then });
+    walk(tx, ty, () => {
+      const bubble = text(this, 0, -62, sold ? "これ ください！" : ["かわいい！", "どの こに しようかな", "げんきだね", "♪"][Math.floor(Math.random() * 4)], 16, "#4a2c17", { backgroundColor: "#ffffffdd", padding: { x: 8, y: 4 } });
+      c.add(bubble);
+      this.time.delayedCall(2200, () => {
+        bubble.destroy();
+        if (sold) { c.add(creature(this, 30, 6, sold.kind, 44, sold.shine)); sfx.coin(); floatText(this, c.x, c.y - 70, `+${coin(sold.coins)}`, "#2e7d32"); }
+        walk(-80, AREA.y + AREA.h - 40, () => { c.destroy(); this.people--; });
+      });
+    });
   }
 
   get tile() { const { w, h } = S.shopSize(store.shop); return Math.floor(Math.min(AREA.w / w, AREA.h / h)); }
@@ -352,7 +398,7 @@ export class Shop extends Phaser.Scene {
       const g = this.add.graphics();
       P.L.add(g);
       P.L.add(creature(this, P.left + 110, y, a.kind, 100, S.shineOf(a), S.paintOf(a)));
-      const name = `${S.shineName(a)}${d.name}  ${a.sex === "m" ? "♂" : "♀"}  ${STAGE_NAME[S.stage(a, now)]}  ${gameYears(a.born, now).toFixed(1)}さい`;
+      const name = `${a.name ? "「" + a.name + "」 " : ""}${S.shineName(a)}${d.name}  ${a.sex === "m" ? "♂" : "♀"}  ${STAGE_NAME[S.stage(a, now)]}  ${gameYears(a.born, now).toFixed(1)}さい`;
       P.L.add(text(this, P.left + 180, y - 44, name, 22, "#4a2c17").setOrigin(0, 0.5));
       [["fork", a.hunger], [d.water ? "water" : "soap", a.clean], ["heart", a.genki], ["star", a.natsuki]].forEach(([icon, v], k) => {
         const gx = P.left + 190 + (k % 2) * 250, gy = y - 6 + Math.floor(k / 2) * 34;
@@ -366,7 +412,11 @@ export class Shop extends Phaser.Scene {
         card(this, P.L, P.left + 165, y + 50, 84, 26, () => { sfx.pop(); this.giftMenu(a, P); }, 0xffe2ec);
         P.L.add(text(this, P.left + 165, y + 50, "🎁 あげる", 13, "#c0392b"));
       }
-      if (S.stage(a, now) === "old") P.L.add(text(this, P.left + 230, y + 50, "もうすぐ いんたい（のんびり ぼくじょうへ）", 16, "#a0522d").setOrigin(0, 0.5));
+      if (!this.visit) { // なまえ（用意した名前から えらぶ。2026-10-16）
+        card(this, P.L, P.left + 255, y + 50, 84, 26, () => { sfx.pop(); this.namePanel(a, () => { P.close(); this.penPanel(penId, page); }); }, 0xe6f0ff);
+        P.L.add(text(this, P.left + 255, y + 50, "なまえ", 13, "#2f5f9f"));
+      }
+      if (S.stage(a, now) === "old") P.L.add(text(this, P.left + 310, y + 50, "もうすぐ いんたい（のんびり ぼくじょうへ）", 16, "#a0522d").setOrigin(0, 0.5));
       const block = S.sellBlock(a, now), bx = P.left + P.w - 170;
       if (a.sick && !a.hospitalUntil) {
         P.L.add(button(this, bx, y, "vet", 56, () => { P.close(); this.scene.start("Vet"); }));
@@ -451,6 +501,20 @@ export class Shop extends Phaser.Scene {
   }
 
   // 家系図：自分・父母・祖父母・ひい祖父母 の 色（色変わりの無い生き物は 名前だけ）
+  // 名前を えらぶ：字が打てない子でも 押すだけで つけられる（data/names.js）
+  namePanel(a, done) {
+    const P = panel(this, `${S.species(a.kind).name}の なまえ`, { w: 1100, h: 600 });
+    [...NAMES, ""].forEach((n, i) => {
+      const x = P.left + 105 + (i % 7) * 148, y = P.top + 120 + Math.floor(i / 7) * 74;
+      card(this, P.L, x, y, 136, 60, () => {
+        const r = S.nameAnimal(store.shop, a.id, n);
+        if (!r.ok) return;
+        store.setShop(r.shop); sfx.star(); P.close(); done();
+      }, n === (a.name || "") ? 0xffe28a : 0xf3ead8);
+      P.L.add(text(this, x, y, n || "なし", 20, "#4a2c17"));
+    });
+  }
+
   lineagePanel(a) {
     const B = { name: m => (m ? MORPHS[a.kind]?.list[m]?.name : MORPHS[a.kind]?.base) || "？", paint: m => (m ? MORPHS[a.kind]?.list[m]?.paint : null) };
     const line = a.line;

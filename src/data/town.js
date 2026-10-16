@@ -41,6 +41,15 @@ Object.assign(TOWN_DECOR, {
   p_family2: { name: "かぞくの にじの もん", icon: "sparkles", price: 0, w: 3, h: 1, appeal: 3, prize: { family: 80 } },
   p_family3: { name: "きんの どうぶつぞう", icon: "trophy", price: 0, w: 2, h: 2, appeal: 3, prize: { family: 120 } },
 });
+// 行事の かざり（買えない。logic/events.js の プレゼント）。絵の代わりに 絵文字（emoji）で 描く
+Object.assign(TOWN_DECOR, {
+  e_kadomatsu: { name: "かどまつ", icon: "plant", emoji: "🎍", price: 0, w: 1, h: 1, appeal: 0, event: true },
+  e_koinobori: { name: "こいのぼり", icon: "fish", emoji: "🎏", price: 0, w: 1, h: 1, appeal: 0, event: true },
+  e_sasa: { name: "ささかざり", icon: "leafy", emoji: "🎋", price: 0, w: 1, h: 1, appeal: 0, event: true },
+  e_chochin: { name: "ちょうちん", icon: "star", emoji: "🏮", price: 0, w: 1, h: 1, appeal: 0, event: true },
+  e_pumpkin: { name: "かぼちゃ", icon: "sun", emoji: "🎃", price: 0, w: 1, h: 1, appeal: 0, event: true },
+  e_tree: { name: "クリスマスツリー", icon: "plant", emoji: "🎄", price: 0, w: 1, h: 1, appeal: 0, event: true },
+});
 export const TOWN_APPEAL_MAX = 5;
 
 // はじめの ならび（x, y はマス）。まんなか（3段め）に 東西の みち、建物は みちに 面して並ぶ

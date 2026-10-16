@@ -4,7 +4,7 @@
 // 右下の「もようがえ」で 指で引っぱって動かせる（マスにピタッと止まり、重なる所は赤くなって置けない）。飾りは 買って置き、押すと しまえる。
 // 兄弟のお店へは えき から でんしゃで行く（せんろ を 町のはしまで つなぐ。logic/town.js の railConnected）。ルールは logic/town.js、並びと値段は data/town.js。
 import { store } from "../store.js";
-import { W, H, text, img, kidFace, floatText, panel, creature, coin, button, card, guide } from "../ui/kit.js";
+import { W, H, text, img, kidFace, floatText, panel, creature, coin, button, card, guide, burst } from "../ui/kit.js";
 import { topBar } from "../ui/topbar.js";
 import { ambient } from "../ui/ambient.js";
 import { shopLevel, species, needs } from "../logic/shop.js";
@@ -15,6 +15,7 @@ import { SHINES } from "../data/shine.js";
 import { MORPHS } from "../data/morphs.js";
 import { openZoo, ZOO_LEVEL, ZOO_LAND_COST } from "../logic/zoo.js";
 import { prizeReady } from "../logic/prize.js";
+import { eventOn, presentReady, takePresent } from "../logic/events.js";
 import { sfx } from "../sound/sfx.js";
 import { bgm } from "../sound/bgm.js";
 
@@ -35,7 +36,32 @@ export class Town extends Phaser.Scene {
     this.buyBtn = button(this, W - 140, 42, "plant", 56, () => { sfx.pop(); this.decorMenu(); }).setDepth(600);
     this.buyLabel = text(this, W - 140, 98, "かざりを かう", 15, "#ffffff", { stroke: "#4a2c17", strokeThickness: 5 }).setDepth(600);
     this.redraw();
+    this.eventDeco();
     this.time.delayedCall(300, () => this.showSummary());
+  }
+
+  // 現実の行事（logic/events.js）：上に 札、空から ふる物、その年 1回の プレゼント
+  eventDeco() {
+    const now = Date.now(), e = eventOn(now);
+    if (!e) return;
+    const tag = text(this, 330, 112, `${e.emoji} きょうは ${e.name}！`, 24, "#ffffff", { stroke: "#c0392b", strokeThickness: 7 }).setDepth(70);
+    this.tweens.add({ targets: tag, scale: 1.06, duration: 700, yoyo: true, repeat: -1 });
+    const FX = { snow: "❄", petal: "🌸", star: "⭐", fire: "✨", leaf: "🍁" }[e.fx];
+    if (FX) for (let i = 0; i < 14; i++) {
+      const f = text(this, (i * 97) % W, 80, FX, 18 + (i % 3) * 6).setDepth(52).setAlpha(0.85);
+      const fall = () => { f.setPosition(Math.random() * W, 90); this.tweens.add({ targets: f, y: H + 20, x: f.x + (Math.random() * 160 - 80), angle: 360, duration: 6000 + Math.random() * 5000, onComplete: fall }); };
+      this.time.delayedCall(i * 500, fall);
+    }
+    if (!presentReady(store.shop, now) || store.visitFrom) return;
+    const box = button(this, 520, 112, "gift", 54, () => {
+      const r = takePresent(store.shop, Date.now());
+      if (!r.ok) return;
+      store.setShop(r.shop); sfx.star(); burst(this, 520, 112, "sparkles", 12, 40, 140); box.destroy();
+      const P = panel(this, `${e.name}の プレゼント！`, { w: 700, h: 380 });
+      P.L.add([text(this, W / 2, P.top + 160, e.emoji, 90), text(this, W / 2, P.top + 270, `${coin(e.coins)}${e.decor ? ` と ${TOWN_DECOR[e.decor].name}（まちに おいたよ）` : ""}`, 22, "#4a2c17")]);
+      this.redraw();
+    }).setDepth(70);
+    this.tweens.add({ targets: box, y: 100, duration: 450, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
   }
 
   // 上から見た芝生：マスごとに少しだけ色を変え、草の線を ちらす（毎回同じ並び）
@@ -139,6 +165,8 @@ export class Town extends Phaser.Scene {
         c.add(img(this, w / 2, (h - 22) / 2, sp.icon, Math.min(w, h) * 0.5));
       }
       this.extras(it, c, w, h, sp, x0, y0);
+    } else if (sp.emoji) {
+      c.add(text(this, w / 2, h / 2, sp.emoji, Math.min(w, h) * 0.8)); // 行事の かざり（絵の代わりに 絵文字）
     } else {
       c.add(img(this, w / 2, h / 2, sp.icon, Math.min(w, h) * 0.95));
     }
@@ -251,7 +279,7 @@ export class Town extends Phaser.Scene {
   decorMenu() {
     const P = panel(this, "かざりを かう", { w: 1000, h: 520 });
     // ごほうびの飾りは ここでは買えない（ずかん から もらう）。5つずつ 2だん（前は 3だんめが 小窓から はみ出していた）
-    Object.entries(TOWN_DECOR).filter(([, d]) => !d.prize).forEach(([k, d], i) => {
+    Object.entries(TOWN_DECOR).filter(([, d]) => !d.prize && !d.event).forEach(([k, d], i) => {
       const x = W / 2 - 400 + (i % 5) * 200, y = H / 2 - 60 + Math.floor(i / 5) * 190;
       card(this, P.L, x, y, 184, 172, () => {
         const r = buyTownDecor(store.shop, k);
@@ -271,7 +299,7 @@ export class Town extends Phaser.Scene {
       const r = removeTownDecor(store.shop, it.id);
       if (r.ok) { store.setShop(r.shop); sfx.pop(); P.close(); this.redraw(); }
     }, 0xffe2d8);
-    P.L.add(text(this, W / 2, H / 2 + 30, d.prize ? "しまう（ずかん から また おけるよ）" : `しまう（+${coin(Math.floor(d.price / 2))}）`, 24, "#a0522d"));
+    P.L.add(text(this, W / 2, H / 2 + 30, d.prize ? "しまう（ずかん から また おけるよ）" : d.event ? "しまう（なくなるよ）" : `しまう（+${coin(Math.floor(d.price / 2))}）`, 24, "#a0522d"));
   }
 
   // きのうの まとめ：その日 はじめて 町に来たとき 1回だけ。とじたら 赤ちゃん → 売れた子 の お知らせへ

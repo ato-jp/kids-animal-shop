@@ -50,6 +50,15 @@ export class PenView extends Phaser.Scene {
       if (this.readonly || over.length || ptr.y < TOP || ptr.y > H - 110) return;
       if (this.type === "tank") this.feed(ptr.x, ptr.y);
     });
+    // なでる：生き物を おしたまま 指を うごかす（2026-10-16）
+    this.input.on("pointermove", ptr => {
+      const st = this.stroking;
+      if (!st || !ptr.isDown) return;
+      const dd = Math.hypot(ptr.x - st.lx, ptr.y - st.ly);
+      st.lx = ptr.x; st.ly = ptr.y; st.dist += dd; st.total += dd;
+      if (st.dist > 140) { st.dist = 0; this.petOnce(st.f); }
+    });
+    this.input.on("pointerup", () => this.time.delayedCall(0, () => { this.stroking = null; }));
     const onChange = () => this.refreshNeeds();
     this.game.events.on("shop-changed", onChange);
     this.events.once("shutdown", () => this.game.events.off("shop-changed", onChange));
@@ -155,9 +164,44 @@ export class PenView extends Phaser.Scene {
       spr.setDepth(10 + z * 60).setInteractive({ useHandCursor: true });
       const f = { a, d, spr, z, k, px, bottom, still, drift, x: spr.x, y: spr.y, vx: rand(-1, 1) || 0.5, vy: 0, ph: rand(0, 6), hop: 0, spin: 0, turn: rand(1, 5), base: spr.scaleX,
         left: (water ? AQUATIC_IMAGES : ANIMAL_IMAGES)[a.kind]?.left ?? true };
-      spr.on("pointerup", () => this.poke(f));
+      spr.on("pointerdown", ptr => { this.stroking = { f, lx: ptr.x, ly: ptr.y, dist: 0, total: 0 }; });
+      spr.on("pointerup", () => { if (!this.stroking || this.stroking.total < 30) this.poke(f); });
       this.cast.push(f);
     });
+  }
+
+  petOnce(f) {
+    burst(this, f.spr.x, f.spr.y - f.px * f.k * 0.3, "heart", 2, 26, 60);
+    this.tweens.add({ targets: f, hop: -18, duration: 140, yoyo: true });
+    if (this.readonly) return;
+    const r = S.pet(store.shop, f.a.id, Date.now());
+    if (!r.ok) return;
+    store.setShop(r.shop);
+    sfx.pop();
+    if (!r.gained && !f.petFull) { f.petFull = true; floatText(this, clamp(f.spr.x, 200, W - 200), f.spr.y - 80, "きょうは たくさん なでて もらったよ", "#ff7a9a"); }
+  }
+
+  // あそぶ：ボール（いぬ・ねこは けいとだま）を出す。ゆびで うごかすと 追いかける。さわると 柵の みんなが げんきに
+  toy() {
+    if (this.ball) this.ball.destroy();
+    const p = this.pen(), yarn = p.animals.some(a => a.kind === "cat");
+    const b = text(this, W / 2, this.floorY(0.6) - 20, yarn ? "🧶" : "⚽", 48).setDepth(80).setInteractive({ useHandCursor: true, draggable: true });
+    b.on("drag", (_, x, y) => b.setPosition(clamp(x, 40, W - 40), clamp(y, this.floorY(0.1), this.floorY(1) - 10)));
+    b.played = false;
+    this.ball = b;
+  }
+  ballHit(f) {
+    const b = this.ball;
+    if (b.hitAt && this.t - b.hitAt < 0.7) return; // つづけて けらない
+    b.hitAt = this.t;
+    this.tweens.add({ targets: b, x: clamp(b.x + (f.vx > 0 ? 160 : -160), 40, W - 40), angle: b.angle + 360, duration: 500, ease: "Quad.easeOut" });
+    burst(this, f.spr.x, f.spr.y - 40, "star", 2, 24, 50);
+    if (b.played || this.readonly) return;
+    b.played = true;
+    const r = S.play(store.shop, this.penId, Date.now());
+    if (!r.ok) return;
+    store.setShop(r.shop); sfx.star();
+    floatText(this, W / 2, TOP + 80, r.gained ? "たのしかった！ みんな げんき アップ" : "きょうは たくさん あそんだよ", "#2e7d32");
   }
 
   poke(f) {
@@ -165,7 +209,7 @@ export class PenView extends Phaser.Scene {
     this.tweens.add({ targets: f, hop: -60, duration: 220, yoyo: true, ease: "Quad.easeOut" });
     if (this.type === "tank" && !f.bottom) this.tweens.add({ targets: f, spin: Math.PI * 2, duration: 600, ease: "Cubic.easeOut", onComplete: () => { f.spin = 0; } });
     const a = f.a, now = Date.now();
-    const label = `${S.shineName(a)}${f.d.name} ${a.sex === "m" ? "♂" : "♀"}  ${{ baby: "あかちゃん", young: "こども", adult: "おとな", old: "おとしより" }[S.stage(a, now)]}`;
+    const label = `${a.name ? "「" + a.name + "」 " : ""}${S.shineName(a)}${f.d.name} ${a.sex === "m" ? "♂" : "♀"}  ${{ baby: "あかちゃん", young: "こども", adult: "おとな", old: "おとしより" }[S.stage(a, now)]}`;
     floatText(this, clamp(f.spr.x, 200, W - 200), f.spr.y - f.px * f.k * 0.6, label, this.type === "tank" ? "#ffffff" : "#4a2c17");
   }
 
@@ -177,11 +221,13 @@ export class PenView extends Phaser.Scene {
       ["fork", "エサ", () => this.feedAll()],
       [this.water ? "water" : "soap", this.water ? "みずかえ" : "せっけん", () => this.useTool(this.water ? "water" : "soap")],
       ["broom", "そうじ", () => this.useTool("broom")],
+      ...(this.type === "tank" ? [] : [["star", "あそぶ", () => this.toy()]]),
       ["book", "ようす", () => this.scene.start("Shop", { openPen: this.penId })],
       ["back", "もどる", () => this.scene.start("Shop")],
     ];
+    const gap = items.length > 5 ? 140 : 170;
     items.forEach(([icon, label, fn], i) => {
-      const x = W / 2 - 340 + i * 170;
+      const x = W / 2 - (gap * (items.length - 1)) / 2 + i * gap;
       button(this, x, H - 66, icon, 46, () => { sfx.pop(); fn(); }).setDepth(101);
       text(this, x, H - 24, label, 17, "#ffffff", { stroke: "#00000080", strokeThickness: 4 }).setDepth(101);
     });
@@ -274,13 +320,18 @@ export class PenView extends Phaser.Scene {
   move(f, d) {
     const s = this, water = s.type === "tank", size = f.px * f.k;
     const sp = (water ? 70 : 45) * (0.6 + 0.4 * f.k) * (f.still ? 0.08 : f.drift ? 0.25 : 1);
-    let target = null, best = 1e9;
-    if (water && !f.still) for (const fd of s.foods) { const dd = Math.hypot(fd.x - f.x, fd.y - f.y); if (dd < best) { best = dd; target = fd; } }
+    let target = null, best = 1e9, chasing = false;
+    if (!water && s.ball && s.ball.active && !f.a.sick) { // ボールを 追いかける
+      chasing = true;
+      const dx = s.ball.x - f.x;
+      f.vx += (Math.sign(dx) * sp * 3.5 - f.vx) * 0.1;
+      if (Math.abs(dx) < size * 0.35 && Math.abs(s.ball.y - f.y) < 120) this.ballHit(f);
+    } else if (water && !f.still) for (const fd of s.foods) { const dd = Math.hypot(fd.x - f.x, fd.y - f.y); if (dd < best) { best = dd; target = fd; } }
     if (target) {
       const dx = target.x - f.x, dy = f.bottom ? 0 : target.y - f.y, n = Math.hypot(dx, dy) || 1;
       f.vx += ((dx / n) * sp * 1.8 - f.vx) * 0.05; f.vy += ((dy / n) * sp * 1.8 - f.vy) * 0.05;
       if (Math.hypot(target.x - f.x, target.y - f.y) < size * 0.5) target.life = 0;
-    } else {
+    } else if (!chasing) {
       f.turn -= d;
       if (f.turn < 0) {
         f.turn = rand(2, 6);
@@ -289,6 +340,7 @@ export class PenView extends Phaser.Scene {
         f.vy = f.bottom ? 0 : rand(-0.3, 0.3) * sp * (f.drift ? 3 : 1);
       }
     }
+    if (s.stroking && s.stroking.f === f) { f.vx = 0; f.vy = 0; } // なでている あいだは じっと している
     f.x += f.vx * d; f.y += f.vy * d;
     if (f.x < size * 0.5) { f.x = size * 0.5; f.vx = Math.abs(f.vx); }
     if (f.x > W - size * 0.5) { f.x = W - size * 0.5; f.vx = -Math.abs(f.vx); }
