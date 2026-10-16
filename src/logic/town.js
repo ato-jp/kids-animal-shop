@@ -77,7 +77,7 @@ export function removeTownDecor(shop, id) {
   const town = clone(townOf(shop)), it = town.items.find(i => i.id === id);
   if (!it || isBuilding(it.kind)) return { shop, ok: false };
   town.items = town.items.filter(i => i !== it);
-  const s = { ...clone(shop), town };
+  const s = { ...clone(shop), town }; // ごほうびの飾りは 値段0なので 何も もどらない（また ずかん から 置ける）
   s.money += Math.floor(TOWN_DECOR[it.kind].price / 2);
   return { shop: s, ok: true };
 }

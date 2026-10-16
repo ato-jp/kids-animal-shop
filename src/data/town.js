@@ -30,6 +30,17 @@ export const TOWN_DECOR = {
   fountain: { name: "ふんすい", icon: "bubbles", price: 40, w: 2, h: 2, appeal: 2 },
   park: { name: "こうえん", icon: "park", price: 60, w: 3, h: 2, appeal: 3 },
 };
+// ごほうびの飾り（買えない）：prize.zukan＝自分の図鑑の数、prize.family＝兄弟みんなの図鑑を あわせた数（logic/prize.js）
+Object.assign(TOWN_DECOR, {
+  p_statue: { name: "どうぶつの どうぞう", icon: "trophy", price: 0, w: 1, h: 1, appeal: 1, prize: { zukan: 10 } },
+  p_star: { name: "ほしの モニュメント", icon: "star", price: 0, w: 1, h: 1, appeal: 1, prize: { zukan: 20 } },
+  p_ship: { name: "ふねの かざり", icon: "ship", price: 0, w: 2, h: 2, appeal: 1, prize: { zukan: 30 } },
+  p_moon: { name: "おつきさまの とう", icon: "moon", price: 0, w: 1, h: 2, appeal: 2, prize: { zukan: 45 } },
+  p_sun: { name: "たいようの ひろば", icon: "sun", price: 0, w: 2, h: 2, appeal: 3, prize: { zukan: 70 } },
+  p_family: { name: "かぞくの きねんひ", icon: "heart", price: 0, w: 2, h: 2, appeal: 2, prize: { family: 40 } },
+  p_family2: { name: "かぞくの にじの もん", icon: "sparkles", price: 0, w: 3, h: 1, appeal: 3, prize: { family: 80 } },
+  p_family3: { name: "きんの どうぶつぞう", icon: "trophy", price: 0, w: 2, h: 2, appeal: 3, prize: { family: 120 } },
+});
 export const TOWN_APPEAL_MAX = 5;
 
 // はじめの ならび（x, y はマス）。まんなか（3段め）に 東西の みち、建物は みちに 面して並ぶ

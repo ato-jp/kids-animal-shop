@@ -9,7 +9,9 @@ import { PENS } from "../data/pens.js";
 import { SHINES, SHINE_IDS } from "../data/shine.js";
 import { SEASONS, TIMES } from "../logic/time.js";
 import { WEATHER_NAME } from "../weather.js";
-import { W, H, text, card, creature, panel } from "../ui/kit.js";
+import { W, H, text, card, creature, panel, img, floatText, burst } from "../ui/kit.js";
+import { prizesOf, prizeReady, claimPrize, familySeen, trophiesOf } from "../logic/prize.js";
+import { TOWN_DECOR } from "../data/town.js";
 import { topBar } from "../ui/topbar.js";
 import { sfx } from "../sound/sfx.js";
 import { bgm } from "../sound/bgm.js";
@@ -51,11 +53,18 @@ export class Zukan extends Phaser.Scene {
       card(this, this.add.container(), 200 + i * 260, 130, 240, 64, () => { sfx.pop(); this.scene.restart({ tab: i }); }, i === tab ? 0xffe28a : 0xffffff);
       text(this, 200 + i * 260, 131, label, 22, "#4a2c17");
     });
-    text(this, 1000, 120, `あった かず ${list.filter(k => seen.includes(k)).length} / ${list.length}`, 26, "#7a4a1e");
+    // ごほうび（図鑑の数で もらえる 町の飾り）と トロフィー（2026-10-16）
+    const ready = prizeReady(store.family, store.family.current);
+    card(this, this.add.container(), 665, 130, 130, 56, () => { sfx.pop(); this.prizePanel(); }, ready ? 0xffe28a : 0xffffff);
+    text(this, 665, 131, "🎁 ごほうび", 18, "#4a2c17");
+    if (ready) { const b = text(this, 724, 106, "！", 22, "#ffffff", { backgroundColor: "#e2553d", padding: { x: 6, y: 0 } }); this.tweens.add({ targets: b, y: 98, duration: 500, yoyo: true, repeat: -1 }); }
+    card(this, this.add.container(), 805, 130, 130, 56, () => { sfx.pop(); this.trophyPanel(); });
+    text(this, 805, 131, "🏆 トロフィー", 18, "#4a2c17");
+    text(this, 1060, 120, `あった かず ${list.filter(k => seen.includes(k)).length} / ${list.length}`, 26, "#7a4a1e");
     // 水の生き物は キラキラあつめ（ふつう＋4つ）の数も
     if (tab === 1) {
       const got = list.reduce((n, k) => n + ((store.shop.shines || {})[k] || []).length, 0);
-      text(this, 1000, 152, `キラキラ あつめ ${got} / ${list.length * (SHINE_IDS.length + 1)}`, 20, "#b8860b");
+      text(this, 1060, 152, `キラキラ あつめ ${got} / ${list.length * (SHINE_IDS.length + 1)}`, 20, "#b8860b");
     }
     list.slice(page * PER, page * PER + PER).forEach((k, i) => {
       const x = 130 + (i % 6) * 205, y = 250 + Math.floor(i / 6) * 150, known = seen.includes(k);
@@ -73,6 +82,41 @@ export class Zukan extends Phaser.Scene {
       if (page > 0) { card(this, this.add.container(), W / 2 - 170, 690, 130, 46, () => this.scene.restart({ tab, page: page - 1 })); text(this, W / 2 - 170, 690, "まえ", 20, "#4a2c17"); }
       if (page < pages - 1) { card(this, this.add.container(), W / 2 + 170, 690, 130, 46, () => this.scene.restart({ tab, page: page + 1 })); text(this, W / 2 + 170, 690, "つぎ", 20, "#4a2c17"); }
     }
+  }
+
+  prizePanel() {
+    const fam = store.family, id = fam.current, list = prizesOf(fam, id);
+    const P = panel(this, "ずかんの ごほうび", { w: 1180, h: 600 });
+    P.L.add(text(this, W / 2, P.top + 92, `じぶんの ずかん ${store.shop.seen.length}しゅるい ・ かぞくみんなで ${familySeen(fam).size}しゅるい`, 20, "#7a4a1e"));
+    list.forEach((p, i) => {
+      const x = P.left + 140 + (i % 4) * 300, y = P.top + 230 + Math.floor(i / 4) * 210;
+      const color = p.placed ? 0xe6f4dc : p.ok ? 0xffe28a : 0xf0ebe0;
+      card(this, P.L, x, y, 270, 190, () => {
+        if (p.placed) { floatText(this, x, y - 100, "まちに かざって あるよ", "#2e7d32"); return; }
+        const r = claimPrize(store.shop, fam, id, p.kind);
+        if (!r.ok) { sfx.no(); floatText(this, x, y - 100, r.why === "notyet" ? `あと ${p.need - p.have}しゅるい` : r.why === "noroom" ? "まちに おく ばしょが ないよ" : "できないよ", "#a0522d"); return; }
+        store.setShop(r.shop); sfx.star(); burst(this, x, y, "sparkles", 10, 40, 110);
+        floatText(this, x, y - 100, "まちに おいたよ！", "#2e7d32");
+        this.time.delayedCall(700, () => { P.close(); this.prizePanel(); });
+      }, color);
+      const im = img(this, x, y - 40, TOWN_DECOR[p.kind].icon, 80);
+      if (!p.ok) im.setTint(0x000000).setAlpha(0.3);
+      P.L.add([im, text(this, x, y + 20, TOWN_DECOR[p.kind].name, 17, "#4a2c17"),
+        text(this, x, y + 52, `${p.family ? "かぞくで" : "じぶんで"} ${p.need}しゅるい`, 15, "#7a4a1e"),
+        text(this, x, y + 76, p.placed ? "かざって あるよ" : p.ok ? "おすと もらえる！" : `あと ${p.need - p.have}`, 15, p.ok ? "#c0392b" : "#9a8a7a")]);
+    });
+  }
+
+  trophyPanel() {
+    const list = trophiesOf(store.shop);
+    const P = panel(this, `トロフィー ${list.filter(t => t.got).length} / ${list.length}`, { w: 1180, h: 600 });
+    list.forEach((t, i) => {
+      const x = P.left + 120 + (i % 5) * 235, y = P.top + 175 + Math.floor(i / 5) * 160;
+      const g = this.add.graphics().fillStyle(t.got ? 0xfff1c9 : 0xeee8dc, 1).fillRoundedRect(x - 105, y - 70, 210, 140, 18);
+      const cup = img(this, x, y - 22, "trophy", 64), mark = img(this, x + 46, y - 44, t.icon, 34);
+      if (!t.got) { cup.setTint(0x000000).setAlpha(0.2); mark.setAlpha(0.25); }
+      P.L.add([g, cup, mark, text(this, x, y + 38, t.got ? t.name : "？？？", 15, "#4a2c17", { wordWrap: { width: 196, useAdvancedWrap: true } })]);
+    });
   }
 
   detail(k) {

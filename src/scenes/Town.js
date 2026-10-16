@@ -14,6 +14,7 @@ import { TOWN_TILE as T, TOWN_TOP, TOWN_COLS, TOWN_ROWS, TOWN_DECOR } from "../d
 import { SHINES } from "../data/shine.js";
 import { MORPHS } from "../data/morphs.js";
 import { openZoo, ZOO_LEVEL, ZOO_LAND_COST } from "../logic/zoo.js";
+import { prizeReady } from "../logic/prize.js";
 import { sfx } from "../sound/sfx.js";
 import { bgm } from "../sound/bgm.js";
 
@@ -215,6 +216,7 @@ export class Town extends Phaser.Scene {
     if (kind === "vet") return all.some(([a]) => a.sick && !a.hospitalUntil);
     if (kind === "station") return shop.gifts.length > 0;
     if (kind === "zoo") return !shop.zoo && shopLevel(shop) >= ZOO_LEVEL;
+    if (kind === "zukan") return prizeReady(store.family, store.family.current);
     if (kind === "board") return boardFor(now).some(r => canFulfill(store.family, store.family.current, r, now) === "ok");
     return false;
   }
@@ -248,9 +250,10 @@ export class Town extends Phaser.Scene {
   // 飾りを買う
   decorMenu() {
     const P = panel(this, "かざりを かう", { w: 1000, h: 520 });
-    Object.entries(TOWN_DECOR).forEach(([k, d], i) => {
-      const x = W / 2 - 330 + (i % 4) * 220, y = H / 2 - 70 + Math.floor(i / 4) * 200;
-      card(this, P.L, x, y, 200, 180, () => {
+    // ごほうびの飾りは ここでは買えない（ずかん から もらう）。5つずつ 2だん（前は 3だんめが 小窓から はみ出していた）
+    Object.entries(TOWN_DECOR).filter(([, d]) => !d.prize).forEach(([k, d], i) => {
+      const x = W / 2 - 400 + (i % 5) * 200, y = H / 2 - 60 + Math.floor(i / 5) * 190;
+      card(this, P.L, x, y, 184, 172, () => {
         const r = buyTownDecor(store.shop, k);
         if (!r.ok) { sfx.no(); floatText(this, x, y - 80, r.reason === "noroom" ? "おく ばしょが ないよ" : "おかねが たりないよ", "#a0522d"); return; }
         store.setShop(r.shop); sfx.coin(); P.close(); this.edit = true; this.redraw();
@@ -268,7 +271,7 @@ export class Town extends Phaser.Scene {
       const r = removeTownDecor(store.shop, it.id);
       if (r.ok) { store.setShop(r.shop); sfx.pop(); P.close(); this.redraw(); }
     }, 0xffe2d8);
-    P.L.add(text(this, W / 2, H / 2 + 30, `しまう（+${coin(Math.floor(d.price / 2))}）`, 24, "#a0522d"));
+    P.L.add(text(this, W / 2, H / 2 + 30, d.prize ? "しまう（ずかん から また おけるよ）" : `しまう（+${coin(Math.floor(d.price / 2))}）`, 24, "#a0522d"));
   }
 
   // きのうの まとめ：その日 はじめて 町に来たとき 1回だけ。とじたら 赤ちゃん → 売れた子 の お知らせへ
