@@ -12,7 +12,7 @@ import { bgm } from "../sound/bgm.js";
 const SW = 290, SH = 236, X0 = 36, Y0 = 168, GAP = 16;
 const slotXY = i => [X0 + (i % 4) * (SW + GAP), Y0 + Math.floor(i / 4) * (SH + GAP)];
 const SAMPLE = { land: "rabbit", big: "lion", cold: "penguin", fresh: "a01", sea: (AQUATIC.find(a => a.water === "sea") || {}).id };
-const WHY = { type: "この てんじでは くらせないよ", kind: "1つの てんじに 1しゅるい だよ", full: "いっぱいで もう はいらないよ", sick: "びょうきの こは つれて いけないよ", notempty: "なかの こを もどしてから だよ" };
+const WHY = { type: "この てんじでは くらせないよ", kind: "1つの てんじに 1しゅるい だよ", full: "いっぱいで もう はいらないよ", sick: "びょうきの こは つれて いけないよ", notempty: "なかの こを もどしてから だよ", zooonly: "この こは どうぶつえんで くらす こ だよ" };
 const say = why => WHY[why] || MESSAGE[why] || "できないよ";
 
 export class Zoo extends Phaser.Scene {
@@ -28,7 +28,7 @@ export class Zoo extends Phaser.Scene {
     const name = store.kid?.name ? `${store.kid.name}の どうぶつえん` : "じぶんの どうぶつえん";
     text(this, 40, 128, name, 30, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 7 }).setOrigin(0, 0.5);
     const y = shop.yesterday?.zooVisitors;
-    text(this, 640, 128, `きのうの おきゃくさん ${y ?? "—"}にん　あしたの よそう ${Z.zooVisitors(shop)}にん`, 24, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 6 });
+    text(this, 700, 128, `きのう ${y ?? "—"}にん ・ あしたの よそう ${Z.zooVisitors(shop)}にん`, 22, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 6 });
     // もん（客足が大きく ふえる）
     const gate = Z.GATES[z.gate];
     card(this, this.add.container(0, 0), 1130, 128, 220, 52, () => { sfx.pop(); this.gateMenu(); }, 0xfff1c9);
@@ -37,7 +37,10 @@ export class Zoo extends Phaser.Scene {
       const ex = z.exhibits.find(e => e.slot === i);
       ex ? this.exhibit(ex, ...slotXY(i)) : this.emptySlot(i, ...slotXY(i));
     }
-    text(this, W / 2, 690, `にゅうえんりょう 1にん ${Z.ZOO_FEE}コイン　しいくいんさん 1ぴき 1にち ${Z.ZOO_KEEP}コイン（${coin(Z.zooKeepCost(shop))}）`, 20, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 5 });
+    const next = Z.ZOO_GIFTS[z.given || 0];
+    if (next && !z.gifts?.length) text(this, W / 2, 668, `つぎの すいぞくかんからの おくりもの まで あと ${next.visitors - (z.total || 0)}にん`, 18, "#fff4a8", { stroke: "#2e6b4f", strokeThickness: 5 });
+    if (z.gifts?.length) this.giftBanner();
+    text(this, W / 2, 698, `にゅうえんりょう 1にん ${Z.ZOO_FEE}コイン　しいくいんさん 1ぴき 1にち ${Z.ZOO_KEEP}コイン（${coin(Z.zooKeepCost(shop))}）`, 20, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 5 });
   }
 
   // てんじの見た目：種類ごとに 地面や水の色、さく・ガラス
@@ -104,7 +107,7 @@ export class Zoo extends Phaser.Scene {
   // てんじを押したとき：いる子（押すと お店へ もどす）と、つれて来られる お店の子
   exhibitMenu(ex) {
     const shop = store.shop, P = panel(this, Z.EXHIBITS[ex.type].name, { w: 1120, h: 600 });
-    P.L.add(text(this, P.left + 40, P.top + 100, "いる こ（おすと おみせへ もどす）", 20, "#7a4a1e").setOrigin(0, 0.5));
+    P.L.add(text(this, P.left + 40, P.top + 100, "いる こ（おすと おみせへ もどす。うるのは おみせで）", 20, "#7a4a1e").setOrigin(0, 0.5));
     if (!ex.animals.length) P.L.add(text(this, P.left + 300, P.top + 170, "まだ だれも いないよ", 20, "#9a8a7a"));
     ex.animals.slice(0, 9).forEach((a, k) => {
       const x = P.left + 90 + k * 116, y = P.top + 175;
@@ -136,6 +139,32 @@ export class Zoo extends Phaser.Scene {
       }, 0xf6d3cc);
       P.L.add(text(this, bx, by, "こわす", 18, "#a0522d"));
     }
+  }
+
+  // すいぞくかんから 届いた子：押すと かいすいの おおすいそう に入れる
+  giftBanner() {
+    const c = this.add.container(W / 2, 664).setDepth(50);
+    const g = this.add.graphics().fillStyle(0xff7a59, 1).fillRoundedRect(-200, -22, 400, 44, 22);
+    c.add([g, text(this, 0, 0, `🎁 すいぞくかんから とどいたよ（${store.shop.zoo.gifts.length}）`, 20, "#ffffff")]);
+    this.tweens.add({ targets: c, scale: 1.06, duration: 500, yoyo: true, repeat: -1 });
+    const zone = this.add.zone(W / 2, 664, 400, 44).setDepth(51).setInteractive({ useHandCursor: true });
+    zone.on("pointerup", () => { sfx.pop(); this.giftMenu(); });
+  }
+
+  giftMenu() {
+    const z = store.shop.zoo, P = panel(this, "すいぞくかんからの おくりもの", { w: 900, h: 440 });
+    z.gifts.forEach((kind, k) => {
+      const x = W / 2 + (k - (z.gifts.length - 1) / 2) * 220, y = P.top + 220;
+      card(this, P.L, x, y, 200, 230, () => {
+        const ex = z.exhibits.find(e => Z.canShow(e, kind) === "ok");
+        if (!ex) { sfx.no(); floatText(this, x, y - 140, "かいすいの おおすいそう を つくってね"); return; }
+        const r = Z.claimZooGift(store.shop, k, ex.id, Date.now());
+        if (!r.ok) { sfx.no(); floatText(this, x, y - 140, say(r.why)); return; }
+        store.setShop(r.shop); sfx.coin(); P.close(); this.scene.restart();
+      }, 0xe9f6ff);
+      P.L.add([creature(this, x, y - 30, kind, 130), text(this, x, y + 80, S.species(kind).name, 20, "#4a2c17")]);
+    });
+    P.L.add(text(this, W / 2, P.top + P.h - 40, "おすと てんじに いれるよ", 18, "#7a4a1e"));
   }
 
   gateMenu() {

@@ -3,7 +3,7 @@
 // ・てんじ（展示）は 8わく。1つの てんじに 1しゅるい（本物の園と同じ）。お店の子を つれて来て 見せる
 // ・お世話は 飼育員さん（1ぴき 1日 ZOO_KEEP コイン）。おなかや そうじは 気にしなくてよい
 // ・お客さん＝（しゅるい×6 ＋ キラキラ×4 ＋ 数）×もん の倍率。壁打ちの「動物園では 外観が客足に大きく効く」を もんで表す
-import { species, findPen, whyNoRoom, shineOf } from "./shop.js";
+import { species, findPen, whyNoRoom, shineOf, newAnimal } from "./shop.js";
 import { ANIMALS } from "../data/animals.js";
 import { gameYears, GAME_YEAR_MS } from "./time.js";
 
@@ -20,6 +20,15 @@ export const GATES = [
   { name: "きれいな もん", cost: 1500, k: 1.5 },
   { name: "りっぱな もん", cost: 6000, k: 2.2 },
   { name: "おしろの もん", cost: 15000, k: 3 },
+];
+
+// お客さんの合計が ここまで来たら すいぞくかんから 届く（大水槽が要る子は 第3弾から。DESIGN.md）
+export const ZOO_GIFTS = [
+  { visitors: 100, kind: "a80" },  // ダンゴウオ
+  { visitors: 300, kind: "a76" },  // マンボウ
+  { visitors: 800, kind: "a77" },  // イルカ
+  { visitors: 2000, kind: "a79" }, // マンタ
+  { visitors: 5000, kind: "a78" }, // ジンベエザメ
 ];
 
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -84,11 +93,17 @@ export function toZoo(shop, animalId, exId) {
   return { shop: s, ok: true };
 }
 
+// 売り買いは ペットショップ、どうぶつえんは 見せて育てる所（2026-10-16 パパ決定）。
+// 園でしか くらせない子（ペンギン＝附属書I、すいぞくかんからの おくりもの）は お店へ出さない
+export const zooOnly = kind => kind === "penguin" || species(kind).aquatic?.area === "gift";
+
 // てんじの子を お店へ もどす（入る柵や水槽が あれば）
 export function fromZoo(shop, animalId) {
   const s = clone(shop), ex = s.zoo?.exhibits.find(e => e.animals.some(a => a.id === animalId));
   if (!ex) return { shop, ok: false, why: "none" };
-  const a = ex.animals.find(x => x.id === animalId), pi = findPen(s, a.kind);
+  const a = ex.animals.find(x => x.id === animalId);
+  if (zooOnly(a.kind)) return { shop, ok: false, why: "zooonly" };
+  const pi = findPen(s, a.kind);
   if (pi < 0) return { shop, ok: false, why: whyNoRoom(s, a.kind) };
   ex.animals = ex.animals.filter(x => x.id !== animalId);
   s.pens[pi].animals.push({ ...a, hunger: 0.8, clean: 0.8, badHours: 0 });
@@ -118,6 +133,10 @@ export function zooDay(s, next) {
   const v = zooVisitors(s), fee = v * ZOO_FEE, keep = zooKeepCost(s);
   s.money += fee - keep; s.today.income += fee; s.earned += fee; s.today.expense += keep;
   s.today.zooVisitors = v;
+  const z = s.zoo;
+  z.total = (z.total || 0) + v;
+  z.gifts = z.gifts || [];
+  while ((z.given || 0) < ZOO_GIFTS.length && z.total >= ZOO_GIFTS[z.given || 0].visitors) { z.gifts.push(ZOO_GIFTS[z.given || 0].kind); z.given = (z.given || 0) + 1; }
   for (const ex of s.zoo.exhibits) {
     const stay = [];
     for (const a of ex.animals) {
@@ -126,4 +145,17 @@ export function zooDay(s, next) {
     }
     ex.animals = stay;
   }
+}
+
+// 届いた子を てんじに 入れる（かいすいの おおすいそう が要る）。入れたら 図鑑にのる（もらった＝自分で手に入れた子）
+export function claimZooGift(shop, idx, exId, now, rng = Math.random) {
+  const kind = shop.zoo?.gifts?.[idx], ex = shop.zoo?.exhibits.find(e => e.id === exId);
+  if (!kind || !ex) return { shop, ok: false, why: "none" };
+  const why = canShow(ex, kind);
+  if (why !== "ok") return { shop, ok: false, why };
+  const s = clone(shop), e = s.zoo.exhibits.find(x => x.id === exId);
+  e.animals.push(newAnimal("a" + s.nextId++, kind, now, rng, now, null, null));
+  s.zoo.gifts.splice(idx, 1);
+  if (!s.seen.includes(kind)) s.seen.push(kind);
+  return { shop: s, ok: true };
 }
