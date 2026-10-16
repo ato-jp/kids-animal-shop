@@ -1,63 +1,80 @@
-// 「だれの おみせ？」字が読めなくても、自分の動物と色で選べる。
+// 「だれ？」：写真（または動物）の顔を押して自分を選び、町へ。字が読めなくても選べる。
+// 子どもを足すのは「＋」：カメラ（インカメ）が開き、撮った顔がアイコンになる。撮らずに戻ったときは動物の絵から選ぶ。
+// 写真は 128px に縮めて端末の中（IndexedDB）にだけ保存し、外へは出さない。名前は おとなの設定で入れる。
 import { store } from "../store.js";
-import { addKid, dayOver } from "../logic/state.js";
-import { isNight } from "../logic/playclock.js";
-import { W, H, text, img, button, parentGate } from "../ui/kit.js";
-import { openParent } from "../parent.js";
+import { addKid } from "../logic/save.js";
+import { W, H, text, button, kidFace, parentGate, panel } from "../ui/kit.js";
+import { openParent, shrink } from "../parent.js";
+import { addPhoto } from "./Boot.js";
 import { sfx } from "../sound/sfx.js";
 
 const MAX_KIDS = 4;
-const COLORS = [0xff9f80, 0x8fd3ff, 0xb9e88f, 0xffd36e];
+const COLORS = ["#ff9f80", "#8fd3ff", "#b9e88f", "#ffd36e"];
 const KID_ICONS = ["hamster", "rabbit", "dog", "cat", "penguin", "lion"];
 
 export class Who extends Phaser.Scene {
   constructor() { super("Who"); }
   create() {
     this.cameras.main.setBackgroundColor("#fff3e0");
-    this.draw();
-    this.events.on("refresh", () => this.scene.restart());
-  }
-  draw() {
-    text(this, W / 2, 110, "だれの おみせ？", 64, "#7a4a1e");
+    text(this, W / 2, 110, "だれが あそぶ？", 60, "#7a4a1e");
     const kids = Object.entries(store.family.kids);
     const items = kids.map(([id, k]) => ({ id, k }));
     if (kids.length < MAX_KIDS) items.push({ add: true });
-    const gap = 290, x0 = W / 2 - ((items.length - 1) * gap) / 2;
+    const gap = 270, x0 = W / 2 - ((items.length - 1) * gap) / 2;
     items.forEach((it, i) => {
-      const x = x0 + i * gap, y = 380;
-      if (it.add) {
-        button(this, x, y, "plus", 120, () => { sfx.pop(); this.pickIcon(kids.length); }, { bg: 0xffffff, ring: 0xdddddd });
-        return;
-      }
-      const color = Number(String(it.k.color).replace("#", "0x"));
-      button(this, x, y, it.k.icon, 170, () => this.enter(it.id), { bg: color, ring: 0xffffff });
-      text(this, x, y + 160, it.k.name || "", 40, "#7a4a1e");
+      const x = x0 + i * gap, y = 370;
+      if (it.add) { button(this, x, y, "plus", 110, () => { sfx.pop(); this.pickIcon(kids.length); }, { ring: 0xdddddd }); return; }
+      const face = kidFace(this, x, y, it.id, it.k, 190);
+      face.setSize(210, 210).setInteractive({ useHandCursor: true });
+      face.on("pointerup", () => this.enter(it.id));
+      text(this, x, y + 140, it.k.name || "", 38, "#7a4a1e");
     });
     parentGate(this, W - 50, H - 50, () => openParent(this));
+    this.events.on("refresh", () => this.scene.restart());
   }
   pickIcon(n) {
-    const layer = this.add.container(0, 0).setDepth(500);
-    const dim = this.add.rectangle(0, 0, W, H, 0x000000, 0.45).setOrigin(0).setInteractive();
-    const panel = this.add.graphics().fillStyle(0xffffff, 1).fillRoundedRect(140, 120, W - 280, 480, 40);
-    const panelHit = this.add.rectangle(W / 2, 360, W - 280, 480, 0xffffff, 0).setInteractive(); // 白い所を押しても閉じない
-    layer.add([dim, panel, panelHit,text(this, W / 2, 190, "どの どうぶつに する？", 48, "#7a4a1e")]);
+    // 先にカメラを開く。うしろには動物えらびを出しておき、撮らずに戻ったら そこから選べる
+    const P = panel(this, "しゃしんを とるか、どうぶつを えらんでね", { w: 1000, h: 440 });
+    const make = (icon, photo) => {
+      const r = addKid(store.family, { name: "", icon, color: COLORS[n % COLORS.length] }, Date.now());
+      r.family.kids[r.id].photo = photo;
+      r.family.current = r.id;
+      store.setFamily(r.family);
+      return r.id;
+    };
+    P.L.add(button(this, W / 2 - 375, H / 2 + 20, "boy", 110, () => this.camera(make, P)));
+    P.L.add(text(this, W / 2 - 375, H / 2 + 100, "しゃしん", 22, "#7a4a1e"));
     KID_ICONS.forEach((k, i) => {
-      const x = 290 + i * 140, y = 400;
-      layer.add(button(this, x, y, k, 110, () => {
-        const color = "#" + COLORS[n % COLORS.length].toString(16).padStart(6, "0");
-        const r = addKid(store.family, { name: "", icon: k, color });
-        r.family.current = r.id;
-        store.setFamily(r.family);
-        sfx.star();
-        this.enter(r.id);
-      }));
+      P.L.add(button(this, W / 2 - 225 + i * 120, H / 2 + 20, k, 96, () => { sfx.star(); this.enter(make(k, null)); }));
     });
-    dim.on("pointerup", () => layer.destroy());
+    this.camera(make, P);
+  }
+
+  // インカメで撮る（capture="user"）。撮れたら 128px に縮めて その子の顔にする
+  camera(make, P) {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.capture = "user";
+    input.onchange = async () => {
+      const f = input.files && input.files[0];
+      if (!f) return;
+      try {
+        const photo = await shrink(f);
+        const id = make(KID_ICONS[Math.floor(Math.random() * KID_ICONS.length)], photo);
+        await addPhoto(this, id, photo);
+        P.close();
+        sfx.star();
+        this.enter(id);
+      } catch (e) { sfx.no(); }
+    };
+    input.click();
   }
   enter(id) {
     sfx.pop();
     store.family.current = id;
     store.persist();
-    this.scene.start(isNight(store.shop, store.today()) ? "Night" : dayOver(store.shop) ? "Report" : "Shop");
+    store.tick();
+    this.scene.start("Town");
   }
 }

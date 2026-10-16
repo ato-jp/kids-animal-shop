@@ -31,6 +31,5 @@ export const sfx = {
   sweep: () => play(() => tone(1800, 0, 0.3, { type: "sawtooth", to: 600, vol: 0.04 })),
   whoosh: () => play(() => tone(200, 0, 0.6, { type: "sawtooth", to: 80, vol: 0.06 })),
   splash: () => play(() => { tone(900, 0, 0.15, { to: 300 }); tone(700, 0.05, 0.2, { to: 250, vol: 0.1 }); }),
-  sleep: () => play(() => [523, 440, 392, 330].forEach((f, i) => tone(f, i * 0.35, 0.5, { vol: 0.12 }))),
   no: () => play(() => tone(260, 0, 0.18, { type: "triangle", to: 200, vol: 0.12 })),
 };

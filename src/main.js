@@ -1,14 +1,19 @@
-// 画面の登録と Phaser の設定。並び順が重なり順になる（Clock を最後に置き、夕方の色を一番上にかける）。
+// 画面の登録と Phaser の設定。並び順が重なり順になる。
 import { Boot } from "./scenes/Boot.js";
 import { Who } from "./scenes/Who.js";
+import { Town } from "./scenes/Town.js";
 import { Shop } from "./scenes/Shop.js";
-import { Departure } from "./scenes/Departure.js";
-import { MapScene } from "./scenes/Map.js";
-import { Scoop } from "./scenes/Scoop.js";
-import { Night } from "./scenes/Night.js";
-import { Clock } from "./scenes/Clock.js";
-import { Report } from "./scenes/Report.js";
+import { Market } from "./scenes/Market.js";
+import { Station } from "./scenes/Station.js";
+import { Vet } from "./scenes/Vet.js";
+import { Farm } from "./scenes/Farm.js";
+import { Spots } from "./scenes/Spots.js";
+import { Fishing } from "./scenes/Fishing.js";
 import { Zukan } from "./scenes/Zukan.js";
+import { PenView } from "./scenes/PenView.js";
+import { Board } from "./scenes/Board.js";
+import { Zoo } from "./scenes/Zoo.js";
+import { Clock } from "./scenes/Clock.js";
 import { W, H } from "./ui/kit.js";
 
 export const game = new Phaser.Game({
@@ -18,7 +23,12 @@ export const game = new Phaser.Game({
   banner: false,
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: W, height: H },
   input: { activePointers: 2 },
-  scene: [Boot, Who, Shop, Departure, MapScene, Scoop, Zukan, Report, Night, Clock],
+  scene: [Boot, Who, Town, Shop, Market, Station, Vet, Farm, Spots, Fishing, Zukan, PenView, Board, Zoo, Clock],
+});
+
+// どの画面も 入るとき 0.16秒で ふわっと出す（市販のゲームらしい 切りかえ）
+game.events.once("ready", () => {
+  for (const sc of game.scene.scenes) if (sc.sys.settings.key !== "Clock") sc.events.on("create", () => sc.cameras.main.fadeIn(160, 255, 248, 236));
 });
 
 // 全画面表示。ブラウザは「人が触ったとき」にしか全画面を許さないので、タッチのたびに

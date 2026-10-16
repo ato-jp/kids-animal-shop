@@ -1,369 +1,573 @@
-// お店（版2）。下の道具箱からエサや道具を選び、動物を押してお世話する。
-// 吹き出しは「こまっていること」だけを出し、どのエサかは教えない（図鑑で調べる）。
+// お店（第1弾）。床はマス目。柵・水槽と家具が置いてある。
+// ふだん：下の道具を選んで柵を押すと、その柵の子みんなにお世話。道具なしで柵を押すと、中の子のようすと「うる」。
+// もようがえ：柵や家具を指で引っぱって動かす。たてる・かぐ・ひろげる・かざり もここから。
 import { store } from "../store.js";
-import { care, needs, isReady, pickRequest, adoptable, adopt, buyFood, build, dayClock, priceOf, VET_COST, MAX_STARS } from "../logic/state.js";
-import { ANIMALS } from "../data/animals.js";
+import * as S from "../logic/shop.js";
+import { marketRate } from "../logic/rate.js";
+import { gameYears, season } from "../logic/time.js";
+import { PENS, SHOP_SIZES } from "../data/pens.js";
+import { FURNITURE } from "../data/furniture.js";
 import { FOODS } from "../data/foods.js";
-import { ROOMS } from "../data/rooms.js";
+import { DECOR } from "../data/decor.js";
 import { PLACES } from "../data/places.js";
-import { W, H, text, img, button, burst, floatText, moneyCounter, parentGate, yen } from "../ui/kit.js";
-import { openParent } from "../parent.js";
+import { MORPHS } from "../data/morphs.js";
+import { buyFromSibling, giftToSibling } from "../logic/trade.js";
+import { W, H, text, img, button, burst, floatText, creature, gauge, panel, card, coin, kidFace, guide } from "../ui/kit.js";
+import { topBar } from "../ui/topbar.js";
 import { sfx } from "../sound/sfx.js";
+import { bgm } from "../sound/bgm.js";
 
-const ROOM_W = 300, ROOM_H = 210;
-const ROOM_POS = [[175, 222], [500, 222], [825, 222], [175, 448], [500, 448], [825, 448]];
-const TOOLS = [...Object.keys(FOODS), "soap", "water", "broom", "vet"];
-const TOOL_ICON = { soap: "soap", water: "water", broom: "broom", vet: "vet" };
-const MESSAGE = {
-  wrongfood: "これは たべないみたい…",
-  nostock: "エサが ないよ。しいれ しよう",
-  nomoney: "おかねが たりないよ",
-  notneeded: "いまは いらないみたい",
-  sick: "びょうきだよ。じゅういさんを よぼう",
+// 床の場所。上の 84〜150 は 奥の壁（窓と棚）を描く（2026-10-16「ハイクオリティに」）
+const AREA = { x: 24, y: 152, w: 960, h: 428 };
+const STAGE_NAME = { baby: "あかちゃん", young: "こども", adult: "おとな", old: "おとしより" };
+const NEED_ICON = { food: "fork", clean: "soap", broom: "broom", vet: "sick" };
+export const MESSAGE = {
+  wrongfood: "これは たべないみたい…", wrongtool: "ちがう きれいの しかた だよ", nostock: "エサが ないよ。いちばで かおう",
+  notneeded: "いまは いらないみたい", nomoney: "おかねが たりないよ", noroom: "おく ばしょが ないよ",
+  nopen: "すむ ばしょが ないよ。もようがえで たてよう", toosmall: "もっと ひろく しないと はいらないよ", full: "いっぱいで もう はいらないよ",
+  eat: "たべられちゃうから いっしょには できないよ", water: "かわ・いけ と うみ では みずが ちがうよ",
+  nosale: "この いきものは うっては いけない きまり", baby: "まだ ちいさすぎて うれないよ", sick: "びょうきの あいだは うれないよ", hospital: "にゅういん ちゅう", new: "おみせに なれるまで（3にち）まってね",
 };
 
 export class Shop extends Phaser.Scene {
   constructor() { super("Shop"); }
 
-  create() {
+  create({ openPen, visit } = {}) {
+    bgm.play("shop");
     this.tool = null;
-    this.panel = null;
-    this.customer = null;
-    this.drawBackground();
-    this.drawTopBar();
-    this.rooms = ROOM_POS.map(([x, y], i) => this.makeRoom(i, x, y));
-    this.makeTray();
-    parentGate(this, W - 36, H - 34, () => openParent(this));
-
-    const onChange = () => this.refresh();
+    this.edit = false;
+    this.layer = null;
+    this.trayButtons = [];
+    // 兄弟の お店を見に来たとき（えき の でんしゃ から）：見るだけ。かえる で 自分に もどる
+    if (visit && visit !== store.family.current) { store.visitFrom = store.visitFrom || store.family.current; store.family.current = visit; }
+    this.visit = !!store.visitFrom;
+    store.tick();
+    this.drawRoom();
+    topBar(this, { back: !this.visit });
+    this.trayG = this.add.graphics();
+    if (this.visit) {
+      const k = store.kid;
+      kidFace(this, 1130, 230, store.family.current, k, 110);
+      text(this, 1130, 330, `${k.name ? k.name + "の" : ""}
+おみせ（みるだけ）`, 20, "#ffffff", { stroke: "#4a2c17", strokeThickness: 5 });
+      button(this, W - 56, 42, "back", 48, () => { sfx.pop(); store.family.current = store.visitFrom; store.visitFrom = null; store.persist(); this.scene.start("Station"); }, { ring: 0x9fd3e6 }).setDepth(501);
+    } else this.makeSide();
+    this.redraw();
+    const onChange = () => this.redraw();
     this.game.events.on("shop-changed", onChange);
-    this.events.on("refresh", onChange);
     this.events.once("shutdown", () => this.game.events.off("shop-changed", onChange));
-    this.refresh();
+    if (openPen) this.penPanel(openPen);
   }
 
-  drawBackground() {
+  get tile() { const { w, h } = S.shopSize(store.shop); return Math.floor(Math.min(AREA.w / w, AREA.h / h)); }
+  toScreen(x, y) { return [AREA.x + x * this.tile, AREA.y + y * this.tile]; }
+
+  // 部屋：奥の壁（壁紙・窓・棚・はば木）と、右の木の台（メニューの置き場）。床は redraw で描く
+  drawRoom() {
+    const d = DECOR.wall.items[store.shop.decor.wall];
     const g = this.add.graphics();
-    g.fillStyle(0xfff3e0, 1).fillRect(0, 0, W, H);
-    for (let x = 0; x < W; x += 80) g.fillStyle(0xfbe9cc, 1).fillRect(x, 90, 40, 520);
-    g.fillStyle(0xe9b77c, 1).fillRoundedRect(1000, 470, 260, 120, 20);
-    g.fillStyle(0xd59a58, 1).fillRect(1000, 510, 260, 12);
+    g.fillStyle(d.wall, 1).fillRect(0, 84, W, H - 84);
+    for (let x = 0; x < W; x += 80) g.fillStyle(d.stripe, 1).fillRect(x, 84, 40, H - 84);
+    g.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0, 0.12, 0.12).fillRect(0, 84, W, 70); // 壁の下ほど 少し暗い
+    // 窓（空と光）と 窓わく
+    for (const wx of [150, 470, 790]) {
+      g.fillGradientStyle(0xa8d8f0, 0xa8d8f0, 0xe6f4fb, 0xe6f4fb, 1).fillRect(wx, 92, 120, 48);
+      g.fillStyle(0xffffff, 0.35).fillTriangle(wx + 10, 92, wx + 50, 92, wx + 10, 132);
+      g.lineStyle(5, 0x8a6a48, 1).strokeRect(wx, 92, 120, 48).lineBetween(wx + 60, 92, wx + 60, 140);
+    }
+    // 棚と小びん
+    g.fillStyle(0x8a6a48, 1).fillRect(320, 120, 110, 6).fillRect(640, 120, 110, 6);
+    [[330, 0xe2553d], [350, 0x5fb3dd], [372, 0xf2c14e], [398, 0x7ac77a], [652, 0xb48aff], [676, 0xf2a35a], [700, 0x5fb3dd], [724, 0xe8e8e8]]
+      .forEach(([x, c]) => g.fillStyle(c, 0.9).fillRoundedRect(x, 104, 14, 16, 3).fillStyle(0xffffff, 0.4).fillRect(x + 3, 107, 3, 8));
+    // 部屋の床（お店の床の まわり。少し暗い 板）
+    g.fillStyle(0x9a7550, 1).fillRect(0, 152, 1000, H - 152);
+    for (let y = 152, r = 0; y < H; y += 26, r++) {
+      g.lineStyle(1, 0x5a3b22, 0.3).lineBetween(0, y, 1000, y);
+      for (let x = (r * 89) % 140; x < 1000; x += 140) g.lineBetween(x, y, x, y + 26);
+    }
+    g.fillStyle(0x6b4a2a, 1).fillRect(0, 144, W, 8); // はば木
+    // 右の木の台（メニュー）
+    g.fillGradientStyle(0x9b7148, 0x8a6240, 0x7a5436, 0x6e4a2f, 1).fillRect(1000, 152, W - 1000, H - 152);
+    for (let y = 160; y < H; y += 22) g.lineStyle(1, 0x5a3b22, 0.25).lineBetween(1000, y, W, y + 4);
+    g.fillStyle(0x000000, 0.18).fillRect(996, 152, 4, H - 152);
+    this.floorG = this.add.graphics();
   }
 
-  drawTopBar() {
-    this.add.graphics().fillStyle(0xf6dfb8, 1).fillRect(0, 0, W, 90);
-    button(this, 48, 45, store.kid.icon, 60, () => { sfx.pop(); this.scene.start("Who"); }, { bg: Number(String(store.kid.color).replace("#", "0x")), ring: 0xffffff });
-    this.money = moneyCounter(this, 110, 45);
-    this.add.graphics().fillStyle(0xffffff, 0.92).fillRoundedRect(370, 11, 250, 68, 34);
-    img(this, 405, 45, "sun", 48);
-    this.clock = text(this, 438, 47, "", 30, "#7a4a1e").setOrigin(0, 0.5);
-    const nav = [["book", "Zukan"], ["cart", null], ["japan", "Map"], ["pole", "Scoop"]];
-    nav.forEach(([key, scene], i) => {
-      button(this, 900 + i * 100, 45, key, 58, () => {
-        sfx.pop();
-        if (scene) this.scene.start(scene, {}); else this.openMarket();
-      }, { ring: i === 1 ? 0xff9f80 : 0xf0c27a });
-      text(this, 900 + i * 100, 86, ["ずかん", "しいれ", "ちず", "すくい"][i], 16, "#7a4a1e");
-    });
-  }
-
-  // ---- 部屋 ----
-  makeRoom(i, x, y) {
-    const r = { i, x, y, id: null };
-    r.bg = this.add.graphics();
-    r.label = text(this, x - ROOM_W / 2 + 14, y - ROOM_H / 2 + 14, "", 16, "#7a4a1e").setOrigin(0, 0.5);
-    r.empty = img(this, x, y - 5, "plus", 70).setAlpha(0.5);
-    r.emptyText = text(this, x, y + 55, "", 20, "#a08060");
-    r.hit = this.add.zone(x, y, ROOM_W, ROOM_H).setInteractive({ useHandCursor: true });
-    r.hit.on("pointerup", () => this.tapRoom(r));
-    r.animal = this.add.image(x - 50, y + 5, "hamster").setInteractive({ useHandCursor: true });
-    r.animal.on("pointerup", () => this.tapAnimal(r));
-    this.tweens.add({ targets: r.animal, y: y + 2, duration: 900 + i * 120, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
-    // ゲージ（おなか・きれい・げんき）
-    r.gauges = ["fork", "soap", "heart"].map((key, k) => {
-      const gy = y - 48 + k * 38;
-      return { icon: img(this, x + 50, gy, key, 30), bar: this.add.graphics(), gy };
-    });
-    r.stars = [0, 1, 2].map(k => img(this, x - 88 + k * 38, y + 82, "star", 32));
-    r.dirt = this.add.container(x + 105, y + 78);
-    r.dirt.add(this.add.graphics().fillStyle(0x8a5a2b, 1).fillCircle(-12, 4, 12).fillCircle(6, 0, 15).fillCircle(20, 7, 9));
-    r.dirt.setSize(80, 50).setInteractive({ useHandCursor: true });
-    r.dirt.on("pointerup", () => this.applyTool(r, this.tool === "broom" ? "broom" : null));
-    r.bubble = this.add.container(x - 50, y - 50);
-    r.glow = this.add.graphics();
-    this.tweens.add({ targets: r.glow, alpha: { from: 0.3, to: 1 }, duration: 600, yoyo: true, repeat: -1 });
-    return r;
-  }
-
-  refresh() {
-    const shop = store.shop;
-    if (!shop) return;
-    this.money.set(shop.money);
-    const { h, m } = dayClock(shop);
-    this.clock.setText(`${shop.day.n}にちめ ${h}:${String(m).padStart(2, "0")}`);
-    shop.rooms.forEach((room, i) => this.drawRoom(this.rooms[i], room));
+  // ---- 床・柵・家具を描き直す ----
+  redraw() {
+    const shop = store.shop, t = this.tile, { w, h } = S.shopSize(shop);
+    const d = DECOR.wall.items[shop.decor.wall];
+    // 床は板張り：板ごとに少しだけ色を変え、継ぎ目をずらす。マス目の線は もようがえ中だけ
+    const fg = this.floorG.clear(), fw = w * t, fh = h * t, plank = Math.max(18, Math.round(t / 3));
+    fg.fillStyle(0x5a3d22, 0.35).fillRoundedRect(AREA.x - 8, AREA.y - 4, fw + 16, fh + 16, 10); // 床の影
+    fg.fillStyle(d.floor, 1).fillRect(AREA.x - 6, AREA.y - 6, fw + 12, fh + 12);
+    for (let y = 0, row = 0; y < fh + 12; y += plank, row++) {
+      const shade = ((row * 37) % 5 - 2) * 0.025;
+      fg.fillStyle(shade > 0 ? 0xffffff : 0x000000, Math.abs(shade)).fillRect(AREA.x - 6, AREA.y - 6 + y, fw + 12, plank);
+      for (let k = 0; k < 6; k++) { // 木目
+        const gx = AREA.x + ((row * 131 + k * 173) % (fw + 6)), gy = AREA.y - 6 + y + 3 + (k % 3) * (plank / 4);
+        fg.lineStyle(1, 0x5a3b22, 0.08).lineBetween(gx, gy, gx + 40 + (k % 4) * 20, gy + 1);
+      }
+      fg.lineStyle(1, 0x000000, 0.12).lineBetween(AREA.x - 6, AREA.y - 6 + y, AREA.x + fw + 6, AREA.y - 6 + y);
+      for (let x = ((row * 97) % 160); x < fw + 12; x += 160) fg.lineBetween(AREA.x - 6 + x, AREA.y - 6 + y, AREA.x - 6 + x, AREA.y - 6 + y + plank);
+    }
+    // 窓から差しこむ光（床の上に うすい 白）と、すみの暗さ
+    for (const wx of [150, 470, 790]) fg.fillStyle(0xfff8e0, 0.13).fillPoints([{ x: wx, y: AREA.y }, { x: wx + 120, y: AREA.y }, { x: wx + 220, y: AREA.y + fh * 0.75 }, { x: wx + 90, y: AREA.y + fh * 0.75 }], true);
+    fg.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.16, 0.16, 0, 0).fillRect(AREA.x - 6, AREA.y - 6, fw + 12, 30);
+    fg.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.14, 0, 0, 0.14).fillRect(AREA.x - 6, AREA.y - 6, 24, fh + 12);
+    if (this.edit) {
+      fg.lineStyle(1, 0x000000, 0.22);
+      for (let i = 0; i <= w; i++) fg.lineBetween(AREA.x + i * t, AREA.y, AREA.x + i * t, AREA.y + fh);
+      for (let j = 0; j <= h; j++) fg.lineBetween(AREA.x, AREA.y + j * t, AREA.x + fw, AREA.y + j * t);
+    }
+    if (this.layer) this.layer.destroy();
+    this.layer = this.add.container(0, 0);
+    for (const it of shop.items) this.drawItem(it);
+    for (const p of shop.pens) this.drawPen(p);
     this.drawTray();
-    if (!this.customer) {
-      const req = pickRequest(shop);
-      if (req) this.comeCustomer(req);
-    }
   }
 
-  drawRoom(r, room) {
-    const a = room.animal, type = room.type;
-    const L = r.x - ROOM_W / 2, T = r.y - ROOM_H / 2;
-    r.bg.clear();
-    if (!type) {
-      r.bg.fillStyle(0xe8d9bf, 1).fillRoundedRect(L, T, ROOM_W, ROOM_H, 26);
-      for (let k = 0; k < 6; k++) r.bg.fillStyle(0xd8c6a6, 1).fillCircle(L + 40 + k * 45, T + 160 - (k % 2) * 20, 6);
+  // 上から見た柵・水槽。水槽＝ガラスのふちと水（淡水は緑がかる）、こべや＝木わくと わら、つめたい みずべ＝氷と水、うんどうじょう＝草と土
+  penBase(p, pw, ph) {
+    const g = this.add.graphics();
+    g.fillStyle(0x000000, 0.12).fillRoundedRect(10, 14, pw, ph, 12).fillStyle(0x000000, 0.12).fillRoundedRect(6, 9, pw - 2, ph - 2, 10); // 右下へ落ちる影
+    const side = { tank: 0x263238, cage: 0x6b4a24, cold: 0xa9c4d4, big: 0x6b5236 }[p.type];
+    g.fillStyle(side, 1).fillRoundedRect(2, 10, pw - 4, ph - 4, 8); // 手前の側面（下に 8px ずらして あつみを出す）
+    if (p.type === "tank") {
+      const fresh = S.waterOf(p) === "fresh";
+      const [a, b] = fresh ? [0x8fd0b0, 0x2f7a5e] : [0x8fdcf2, 0x2a86b8];
+      g.fillStyle(0x37474f, 1).fillRoundedRect(2, 2, pw - 4, ph - 4, 8);                 // 枠
+      g.fillStyle(0xdff3fb, 1).fillRoundedRect(6, 6, pw - 12, ph - 12, 6);               // ガラス
+      g.fillGradientStyle(a, a, b, b, 1).fillRect(10, 10, pw - 20, ph - 20);              // 水
+      g.fillStyle(fresh ? 0x8a7a5e : 0xe8d6a8, 0.9).fillRect(10, ph - 10 - (ph - 20) * 0.16, pw - 20, (ph - 20) * 0.16); // 底の砂
+      for (let i = 0; i < 5; i++) g.fillStyle(0xffffff, 0.12).fillEllipse(20 + ((i * 53) % (pw - 40)), 22 + ((i * 31) % (ph * 0.5)), 40, 8); // 水面の光
+      const by = ph - 10 - (ph - 20) * 0.16; // 底：たんすい＝水草、かいすい＝サンゴ
+      for (let i = 0; i < Math.max(3, pw / 30); i++) {
+        const x = 18 + ((i * 41) % (pw - 36));
+        if (fresh) g.lineStyle(3, i % 2 ? 0x3f8f3a : 0x5fb34a, 1).lineBetween(x, by + 4, x + ((i % 3) - 1) * 5, by - 14 - (i % 3) * 8);
+        else g.fillStyle([0xff8a7a, 0xffb36a, 0xf06aa8][i % 3], 0.95).fillCircle(x, by + 2, 4 + (i % 2) * 2).fillCircle(x + 5, by - 3, 3);
+      }
+      g.fillStyle(0xffffff, 0.35).fillRect(10, 10, pw - 20, 4);                          // ガラスの反射
+    } else if (p.type === "cage") {
+      g.fillStyle(0x8d6232, 1).fillRoundedRect(2, 2, pw - 4, ph - 4, 6);
+      g.fillStyle(0xe9cf8a, 1).fillRect(8, 8, pw - 16, ph - 16);
+      for (let i = 0; i < pw * ph / 400; i++) { const x = 10 + ((i * 47) % (pw - 30)), y = 10 + ((i * 29) % (ph - 24)); g.lineStyle(2, i % 2 ? 0xd4b05a : 0xf3dc8e, 0.9).lineBetween(x, y, x + 14, y + ((i % 3) - 1) * 4); }
+      g.lineStyle(2, 0x6b4a24, 0.55);
+      for (let x = 14; x < pw - 8; x += 12) g.lineBetween(x, 4, x, 10).lineBetween(x, ph - 10, x, ph - 4); // 柵の格子
+    } else if (p.type === "cold") {
+      g.fillStyle(0xf4f9fc, 1).fillRoundedRect(2, 2, pw - 4, ph - 4, 10);
+      g.fillGradientStyle(0x7cc6e8, 0x7cc6e8, 0x2f86b8, 0x2f86b8, 1).fillRoundedRect(pw * 0.38, ph * 0.3, pw * 0.56, ph * 0.62, 18);
+      g.fillStyle(0xdce9f2, 1).fillEllipse(pw * 0.2, ph * 0.7, pw * 0.25, ph * 0.18);
     } else {
-      r.bg.fillStyle(ROOMS[type].color, 1).fillRoundedRect(L, T, ROOM_W, ROOM_H, 26);
-      if (!a) r.bg.lineStyle(4, 0xe0c9a6, 1).strokeRoundedRect(L, T, ROOM_W, ROOM_H, 26);
+      g.fillStyle(0x8a6a48, 1).fillRoundedRect(2, 2, pw - 4, ph - 4, 6);
+      g.fillStyle(0xa9c46a, 1).fillRect(7, 7, pw - 14, ph - 14);
+      g.fillStyle(0xc9ae7a, 0.8).fillEllipse(pw * 0.6, ph * 0.62, pw * 0.5, ph * 0.35);
+      for (let i = 0; i < pw * ph / 300; i++) { const x = 9 + ((i * 41) % (pw - 20)), y = 9 + ((i * 23) % (ph - 20)); g.lineStyle(2, i % 2 ? 0x8fb050 : 0xbcd585, 1).lineBetween(x, y, x + 2, y - 6); }
     }
-    r.label.setText(type ? ROOMS[type].name : "あきち");
-    r.empty.setVisible(!a).setTexture(type ? "plus" : "hammer");
-    r.emptyText.setVisible(!a).setText(type ? "どうぶつを しいれる" : "へやを たてる");
-    for (const o of [r.animal, ...r.stars, r.dirt]) o.setVisible(!!a);
-    r.gauges.forEach(g => { g.icon.setVisible(!!a); g.bar.clear(); });
-    r.glow.clear();
-    if (!a) { r.bubble.removeAll(true); r.bubbleKey = null; r.id = null; return; }
+    return g;
+  }
 
-    const d = ANIMALS[a.kind];
-    if (r.id !== a.id) {
-      r.id = a.id;
-      r.animal.setTexture(a.kind).setScale((a.kind === "elephant" || a.kind === "lion" ? 140 : 120) / 256);
-    }
-    r.animal.setTint(a.sick ? 0xb8c4a0 : 0xffffff);
-    r.gauges[1].icon.setTexture(d.water ? "water" : "soap");
-    [a.hunger, a.clean, a.genki].forEach((v, k) => {
-      const g = r.gauges[k], color = v < 0.3 ? 0xe2553d : v < 0.6 ? 0xf2b53c : 0x6cc070;
-      g.bar.fillStyle(0xffffff, 1).fillRoundedRect(r.x + 72, g.gy - 7, 70, 14, 7).fillStyle(color, 1).fillRoundedRect(r.x + 72, g.gy - 7, Math.max(6, 70 * v), 14, 7);
+  drawItem(it) {
+    const f = FURNITURE[it.kind], t = this.tile;
+    const [sx, sy] = this.toScreen(it.x, it.y);
+    const c = this.add.container(sx, sy);
+    c.add(this.add.graphics().fillStyle(0x000000, 0.18).fillEllipse((f.w * t) / 2 + 8, f.h * t - 10, f.w * t * 0.75, 16)); // 影
+    c.add(img(this, (f.w * t) / 2, (f.h * t) / 2, f.icon, Math.min(f.w, f.h) * t * 0.8));
+    if (f.toy) c.add(img(this, f.w * t - 14, 14, "star", 22));
+    c.setSize(f.w * t, f.h * t);
+    this.makeDraggable(c, it.id);
+    c.on("pointerup", () => { if (this.edit && !c.dragged) this.itemMenu(it); });
+    this.layer.add(c);
+  }
+
+  drawPen(p) {
+    const now = Date.now(), t = this.tile, [fw, fh] = S.footprint(p), pw = fw * t, ph = fh * t;
+    const [sx, sy] = this.toScreen(p.x, p.y);
+    const c = this.add.container(sx, sy);
+    c.add(this.penBase(p, pw, ph));
+    const mark = S.purposeOf(p) === "sale" ? `🏷${S.TIERS[S.tierOf(p)].name}` : "❤";
+    const pname = p.type === "tank" ? `${S.WATER_NAME[S.waterOf(p)]}の すいそう` : PENS[p.type].name;
+    const label = text(this, 14, 16, `${mark} ${pname} Lv${p.level}  ${S.usedSpace(p)}/${S.capacity(p)}`, 14, "#ffffff").setOrigin(0, 0.5);
+    c.add([this.add.graphics().fillStyle(0x1d2a33, 0.55).fillRoundedRect(6, 5, Math.min(label.width + 16, pw - 12), 22, 11), label]);
+    // たくさん いるときは マス目に ならべる。ほしい物の印は、少ないときは1ぴきずつ、多いときは まとめて左下に
+    const here = p.animals, n = here.length, top = 30, ih = ph - top - 6;
+    const cols = Math.max(1, Math.ceil(Math.sqrt((n * pw) / ih))), rows = Math.max(1, Math.ceil(n / cols));
+    const cw = pw / cols, ch = ih / rows, px = Math.min(cw, ch) * (n > 3 ? 0.8 : 0.62);
+    const many = n > 3;
+    here.forEach((a, i) => {
+      const ax = cw * (i % cols) + cw / 2, ay = top + ch * Math.floor(i / cols) + ch / 2 + (many ? 0 : 8);
+      const im = creature(this, ax, ay, a.kind, a.hospitalUntil || S.stage(a, now) === "baby" ? px * 0.6 : px, S.shineOf(a), S.paintOf(a));
+      if (a.hospitalUntil) im.setAlpha(0.35);
+      if (a.sick) im.setTint(0xb8c4a0);
+      this.tweens.add({ targets: im, y: ay - 3, duration: 800 + (i % 7) * 150, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
+      c.add(im);
+      if (many) return;
+      const want = S.needs(a, p).filter(k => k !== "broom");
+      want.forEach((k, j) => c.add(img(this, ax - 14 * (want.length - 1) + j * 28, ay - px * 0.55 - 6, NEED_ICON[k], 26)));
     });
-    r.stars.forEach((s, k) => s.setTint(k < a.stars ? 0xffffff : 0x555555).setAlpha(k < a.stars ? 1 : 0.35));
-    r.dirt.setVisible(a.dirty);
-    if (isReady(a)) r.glow.lineStyle(10, 0xffd34d, 1).strokeRoundedRect(L - 4, T - 4, ROOM_W + 8, ROOM_H + 8, 30);
-
-    const want = needs(a).filter(n => n !== "broom");
-    const key = want.join(",") + (d.water ? "w" : "");
-    if (r.bubbleKey === key) return;
-    r.bubbleKey = key;
-    r.bubble.removeAll(true);
-    if (!want.length) return;
-    const bw = 14 + want.length * 40;
-    r.bubble.add(this.add.graphics().fillStyle(0xffffff, 0.95).fillRoundedRect(-bw / 2, -22, bw, 44, 22));
-    want.forEach((n, k) => r.bubble.add(img(this, -bw / 2 + 27 + k * 40, 0, { food: "fork", clean: d.water ? "water" : "soap", vet: "sick" }[n], 32)));
-    r.bubble.setScale(0.6);
-    this.tweens.add({ targets: r.bubble, scale: 1, duration: 300, ease: "Back.easeOut" });
-  }
-
-  tapRoom(r) {
-    const room = store.shop.rooms[r.i];
-    if (room.animal) { this.applyTool(r, this.tool); return; }
-    if (!room.type) this.openBuild(r.i); else this.openAdopt(r.i);
-  }
-
-  tapAnimal(r) {
-    if (this.tool) { this.applyTool(r, this.tool); return; }
-    const a = store.shop.rooms[r.i].animal;
-    if (!a) return;
-    sfx.pop();
-    this.hop(r);
-    floatText(this, r.x - 50, r.y - 40, ANIMALS[a.kind].name, "#7a4a1e");
-    if (isReady(a) && this.customer && this.customer.req.room === r.i) this.sendOff();
-  }
-
-  hop(r) {
-    this.tweens.add({ targets: r.animal, scaleY: r.animal.scaleX * 0.85, duration: 90, yoyo: true });
-  }
-
-  shake(r) {
-    this.tweens.add({ targets: r.animal, angle: { from: -12, to: 12 }, duration: 90, yoyo: true, repeat: 2, onComplete: () => r.animal.setAngle(0) });
-  }
-
-  applyTool(r, tool) {
-    if (!tool) { floatText(this, r.x, r.y - 40, "したの どうぐを えらんでね", "#7a4a1e"); return; }
-    const { shop, result } = care(store.shop, r.i, tool);
-    if (result === "wrongtool") {
-      sfx.no(); this.shake(r);
-      floatText(this, r.x, r.y - 40, tool === "soap" ? "みずの いきものは みずかえ だよ" : "みずかえは みずの いきもの だけ", "#a0522d");
-      return;
+    if (many) {
+      const want = [...new Set(here.flatMap(a => S.needs(a, p)).filter(k => k !== "broom"))];
+      want.forEach((k, j) => c.add(img(this, 20 + j * 30, ph - 18, NEED_ICON[k], 26)));
     }
-    if (MESSAGE[result] && result !== "sick") {
-      sfx.no(); if (result === "wrongfood") this.shake(r);
-      floatText(this, r.x, r.y - 40, MESSAGE[result], "#a0522d");
-      return;
-    }
-    store.setShop(shop);
-    if (tool === "broom") {
-      const b = img(this, r.x + 105, r.y + 50, "broom", 80).setDepth(800);
-      this.tweens.add({ targets: b, angle: { from: -30, to: 30 }, duration: 150, yoyo: true, repeat: 2, onComplete: () => b.destroy() });
-      sfx.sweep();
-    } else if (tool === "vet") {
-      sfx.star(); burst(this, r.x - 50, r.y, "heart", 6, 36, 80);
-      floatText(this, r.x, r.y - 40, "げんきに なった！ -" + yen(VET_COST));
-    } else {
-      const f = img(this, r.x, r.y + 120, TOOL_ICON[tool] || tool, 64).setDepth(800);
-      this.tweens.add({ targets: f, x: r.x - 50, y: r.y, scale: 0.05, duration: 400, ease: "Cubic.easeIn", onComplete: () => f.destroy() });
-      if (tool === "soap" || tool === "water") burst(this, r.x - 50, r.y, "bubbles", 6, 40, 70);
-      sfx.eat();
-      if (result === "sick") floatText(this, r.x, r.y - 40, MESSAGE.sick, "#a0522d");
-    }
-    this.hop(r);
-    if (result === "star") {
-      this.time.delayedCall(350, () => {
-        sfx.star();
-        const k = shop.rooms[r.i].animal.stars - 1;
-        burst(this, r.stars[k].x, r.stars[k].y, "star", 6, 28, 60);
-        if (k + 1 === MAX_STARS) floatText(this, r.x, r.y - 60, "たびだちの じゅんび できた！");
-      });
-    }
-    this.refresh();
+    if (p.dirty && here.length) c.add(this.add.graphics().fillStyle(0x8a5a2b, 1).fillCircle(pw - 30, ph - 22, 9).fillCircle(pw - 18, ph - 26, 11).fillCircle(pw - 8, ph - 20, 7));
+    c.setSize(pw, ph);
+    this.makeDraggable(c, p.id);
+    c.on("pointerup", () => { if (c.dragged) return; if (this.edit) this.penEditMenu(p); else if (this.tool) this.applyTool(p); else this.scene.start("PenView", { penId: p.id, readonly: this.visit }); });
+    this.layer.add(c);
+  }
+
+  // もようがえ中だけ引っぱれる。離したらマスにそろえて置く（置けなければ元にもどる）
+  makeDraggable(c, id) {
+    // 押せる範囲は 見た目と同じ「左上から右下」（setSize だけだと 左上の角を中心にした四角になり、右下が押せない）
+    c.setInteractive({ hitArea: new Phaser.Geom.Rectangle(c.width / 2, c.height / 2, c.width, c.height), hitAreaCallback: Phaser.Geom.Rectangle.Contains, useHandCursor: true, draggable: true });
+    c.on("dragstart", () => { c.dragged = false; if (this.edit) c.setAlpha(0.8); });
+    c.on("drag", (_, x, y) => {
+      if (!this.edit) return;
+      c.dragged = true; c.x = x; c.y = y;
+      // 離したら置かれるマスに 置けるかどうかを色で見せる（置けない所は赤）
+      const gx = Math.round((x - AREA.x) / this.tile), gy = Math.round((y - AREA.y) / this.tile);
+      const ok = S.moveThing(store.shop, id, gx, gy).ok;
+      if (!c.redMark) { c.redMark = this.add.rectangle(0, 0, c.width, c.height, 0xe2553d, 0.45).setOrigin(0); c.add(c.redMark); }
+      c.redMark.setVisible(!ok);
+    });
+    c.on("dragend", () => {
+      if (!this.edit || !c.dragged) return;
+      const gx = Math.round((c.x - AREA.x) / this.tile), gy = Math.round((c.y - AREA.y) / this.tile);
+      const r = S.moveThing(store.shop, id, gx, gy);
+      if (r.ok) { store.setShop(r.shop); sfx.pop(); } else { sfx.no(); floatText(this, c.x + 40, c.y, "そこには おけないよ", "#a0522d"); }
+      this.time.delayedCall(10, () => this.redraw());
+    });
+  }
+
+  // ---- 右の列 ----
+  makeSide() {
+    const x = 1130;
+    this.editBtn = button(this, x, 160, "brush", 70, () => { sfx.pop(); this.edit = !this.edit; this.tool = null; this.showEditButtons(); this.redraw(); });
+    const LB = { stroke: "#3a2412", strokeThickness: 5 }; // 木の台の上でも 読める白い字
+    text(this, x, 222, "もようがえ", 20, "#ffffff", LB);
+    // スタッフ（留守の日の お世話）。もようがえ中は かくす
+    const st = store.shop.staff, working = S.staffWorking(store.shop, Date.now());
+    this.staffBtn = button(this, x, 330, "woman", 64, () => { sfx.pop(); this.staffMenu(); });
+    this.staffText = text(this, x, 390, working ? `スタッフ
+あと ${Math.ceil((st.until - Date.now()) / 86400000)}にち` : "スタッフ", 18, "#ffffff", LB);
+    this.editButtons = [
+      [300, "hammer", "たてる", () => this.buildMenu()],
+      [400, "plant", "かぐ", () => this.furnitureMenu()],
+      [500, "house", "ひろげる", () => this.expandMenu()],
+      [600, "brush", "かざり", () => this.decorMenu()],
+    ].map(([y, key, label, fn]) => [button(this, x, y, key, 56, () => { sfx.pop(); fn(); }), text(this, x, y + 50, label, 18, "#ffffff", LB)]);
+    this.showEditButtons();
+  }
+  showEditButtons() {
+    for (const [b, t] of this.editButtons) { b.setVisible(this.edit); t.setVisible(this.edit); }
+    this.staffBtn?.setVisible(!this.edit); this.staffText?.setVisible(!this.edit);
+    this.editBtn.list[0].clear().fillStyle(this.edit ? 0xffe28a : 0xffffff, 1).fillCircle(0, 0, 43).lineStyle(6, 0xf0c27a, 1).strokeCircle(0, 0, 43);
   }
 
   // ---- 道具箱 ----
-  makeTray() {
-    this.add.graphics().fillStyle(0xf6dfb8, 1).fillRoundedRect(10, 600, 980, 112, 24);
-    this.toolButtons = TOOLS.map((tool, k) => {
-      const x = 52 + k * 78, y = 646;
-      const c = this.add.container(x, y);
-      const ring = this.add.graphics();
-      const icon = img(this, 0, 0, TOOL_ICON[tool] || tool, 52);
-      const count = text(this, 0, 44, "", 16, "#7a4a1e");
-      c.add([ring, icon, count]).setSize(74, 100).setInteractive({ useHandCursor: true });
+  drawTray() {
+    for (const b of this.trayButtons) b.destroy();
+    this.trayButtons = [];
+    this.trayG.clear();
+    if (this.edit || this.visit) { guide(this, null); return; }
+    const shop = store.shop;
+    const foods = Object.keys(FOODS).filter(f => shop.pens.some(p => p.animals.some(a => S.species(a.kind).food === f)) || (shop.stock[f] || 0) > 0);
+    const tools = [...foods, "soap", "water", "broom"];
+    this.trayG.fillStyle(0xf6dfb8, 1).fillRoundedRect(14, 596, 980, 116, 24);
+    this.trayX = {};
+    tools.forEach((tool, k) => {
+      const x = 62 + k * 88, on = this.tool === tool;
+      this.trayX[tool] = x;
+      const c = this.add.container(x, on ? 640 : 646);
+      const g = this.add.graphics().fillStyle(0xffffff, 1).fillRoundedRect(-38, -40, 76, 102, 16);
+      if (on) g.lineStyle(5, 0xff7a59, 1).strokeRoundedRect(-38, -40, 76, 102, 16);
+      const icon = img(this, 0, 0, FOODS[tool] ? FOODS[tool].icon : tool, 52);
+      c.add([g, icon]);
+      if (FOODS[tool]) { const n = shop.stock[tool] || 0; c.add(text(this, 0, 46, n + "かい", 15, "#7a4a1e")); if (!n) icon.setAlpha(0.35); }
+      c.setSize(76, 102).setInteractive({ useHandCursor: true });
       c.on("pointerup", () => {
         sfx.pop();
         this.tool = this.tool === tool ? null : tool;
-        if (this.tool) floatText(this, x, 590, tool === "vet" ? "じゅういさん " + yen(VET_COST) : (FOODS[tool]?.name || { soap: "せっけん", water: "みずかえ", broom: "ほうき" }[tool]), "#7a4a1e");
+        if (this.tool) floatText(this, x, 580, FOODS[tool]?.name || { soap: "せっけん", water: "みずかえ", broom: "そうじ" }[tool], "#7a4a1e");
         this.drawTray();
       });
-      return { tool, c, ring, icon, count };
+      this.trayButtons.push(c);
     });
+    this.showGuide();
   }
 
-  drawTray() {
-    const stock = store.shop.stock;
-    for (const b of this.toolButtons) {
-      const on = this.tool === b.tool;
-      b.ring.clear().fillStyle(on ? 0xffffff : 0xfffaf2, 1).fillRoundedRect(-34, -38, 68, 98, 16);
-      if (on) b.ring.lineStyle(5, 0xff7a59, 1).strokeRoundedRect(-34, -38, 68, 98, 16);
-      b.c.y = on ? 640 : 646;
-      if (FOODS[b.tool]) {
-        const n = stock[b.tool] || 0;
-        b.count.setText(n + "こ");
-        b.icon.setAlpha(n ? 1 : 0.35);
-      } else b.count.setText(b.tool === "vet" ? "300えん" : "");
+  // はじめての案内（お店レベル0の あいだ）：おなかが すいた子の エサを指し、えらんだら その柵を指す
+  showGuide() {
+    const shop = store.shop;
+    if (this.edit || this.visit || S.shopLevel(shop) >= 1) { guide(this, null); return; }
+    for (const p of shop.pens) for (const a of p.animals) {
+      if (!S.needs(a, p).includes("food")) continue;
+      const food = S.species(a.kind).food;
+      if (this.tool !== food) { if (this.trayX?.[food] != null && (shop.stock[food] || 0) > 0) { guide(this, this.trayX[food], 640, "エサを えらんで", 700); return; } }
+      else { const [sx, sy] = this.toScreen(p.x, p.y), [fw, fh] = S.footprint(p); guide(this, sx + (fw * this.tile) / 2, sy + (fh * this.tile) / 2, "ここに あげよう", 700); return; }
+    }
+    guide(this, null);
+  }
+
+  applyTool(p) {
+    const { shop, result } = S.care(store.shop, p.id, this.tool);
+    const [sx, sy] = this.toScreen(p.x, p.y);
+    if (result !== "ok") { sfx.no(); floatText(this, sx + 80, sy + 30, MESSAGE[result], "#a0522d"); return; }
+    store.setShop(shop);
+    sfx.eat();
+    burst(this, sx + 60, sy + 60, this.tool === "broom" ? "sparkles" : this.tool === "soap" || this.tool === "water" ? "bubbles" : "heart", 5, 36, 70);
+    this.redraw();
+  }
+
+  // ---- 柵の中のようす・売る ----
+  penPanel(penId, page = 0) {
+    const p = store.shop.pens.find(q => q.id === penId);
+    if (!p) return;
+    const P = panel(this, `${p.type === "tank" ? S.WATER_NAME[S.waterOf(p)] + "の すいそう" : PENS[p.type].name} Lv${p.level}  ひろさ ${S.usedSpace(p)}/${S.capacity(p)}`);
+    const PER = 3, pages = Math.max(1, Math.ceil(p.animals.length / PER));
+    page = Math.min(page, pages - 1);
+    if (pages > 1) {
+      P.L.add(text(this, P.left + P.w - 150, P.top + P.h - 60, `${page + 1} / ${pages}`, 22, "#7a4a1e"));
+      const go = d => () => { sfx.pop(); P.close(); this.penPanel(penId, page + d); };
+      if (page > 0) P.L.add(button(this, P.left + P.w - 230, P.top + P.h - 60, "back", 44, go(-1)));
+      if (page < pages - 1) P.L.add(button(this, P.left + P.w - 70, P.top + P.h - 60, "back", 44, go(1)).setScale(-1, 1));
+    }
+    const now = Date.now();
+    // だいじに そだてる／はんばいよう と、はんばいよう の 値段の つけかた（相場 × たかめ・ふつう・やすめ）
+    const purpose = S.purposeOf(p), tier = S.tierOf(p);
+    const pick = (x, w, label, on, fn) => { card(this, P.L, x, P.top + 96, w, 50, () => { sfx.pop(); fn(); }, on ? 0xffe28a : 0xf3ead8); P.L.add(text(this, x, P.top + 97, label, 19, "#4a2c17")); };
+    const redo = r => { if (!r.ok) return; store.setShop(r.shop); P.close(); this.redraw(); this.penPanel(penId, page); };
+    if (this.visit) { // 見に来ている兄弟の お店：切りかえは できない
+      P.L.add(text(this, P.left + 60, P.top + 97, purpose === "sale" ? `🏷 はんばいよう（${S.TIERS[tier].name}）` : "❤ だいじに そだてて いるよ", 20, "#7a4a1e").setOrigin(0, 0.5));
+    } else {
+    pick(P.left + 160, 240, "❤ だいじに そだてる", purpose === "keep", () => redo(S.setPurpose(store.shop, penId, "keep")));
+    pick(P.left + 380, 180, "🏷 はんばいよう", purpose === "sale", () => redo(S.setPurpose(store.shop, penId, "sale")));
+    if (purpose === "sale") Object.entries(S.TIERS).forEach(([id, t], k) => pick(P.left + 580 + k * 125, 115, t.name, tier === id, () => redo(S.setTier(store.shop, penId, id))));
+    else {
+      const on = p.breed !== false;
+      pick(P.left + 600, 200, on ? "👶 あかちゃん OK" : "あかちゃん なし", on, () => redo(S.setBreed(store.shop, penId, !on)));
+      P.L.add(text(this, P.left + 720, P.top + 97, "うられないよ", 15, "#7a4a1e").setOrigin(0, 0.5));
+    }
+    }
+    if (!p.animals.length) P.L.add(text(this, W / 2, H / 2 - 40, "まだ だれも いないよ。いちばで むかえよう", 30, "#4a2c17"));
+    p.animals.slice(page * PER, page * PER + PER).forEach((a, i) => {
+      const y = P.top + 190 + i * 132, d = S.species(a.kind);
+      card(this, P.L, W / 2, y, P.w - 80, 124, () => {});
+      const g = this.add.graphics();
+      P.L.add(g);
+      P.L.add(creature(this, P.left + 110, y, a.kind, 100, S.shineOf(a), S.paintOf(a)));
+      const name = `${S.shineName(a)}${d.name}  ${a.sex === "m" ? "♂" : "♀"}  ${STAGE_NAME[S.stage(a, now)]}  ${gameYears(a.born, now).toFixed(1)}さい`;
+      P.L.add(text(this, P.left + 180, y - 44, name, 22, "#4a2c17").setOrigin(0, 0.5));
+      [["fork", a.hunger], [d.water ? "water" : "soap", a.clean], ["heart", a.genki], ["star", a.natsuki]].forEach(([icon, v], k) => {
+        const gx = P.left + 190 + (k % 2) * 250, gy = y - 6 + Math.floor(k / 2) * 34;
+        P.L.add(img(this, gx, gy, icon, 26));
+        gauge(this, g, gx + 22, gy, 180, v);
+      });
+      card(this, P.L, P.left + 75, y + 50, 84, 26, () => { sfx.pop(); this.lineagePanel(a); }, 0xf3ead8);
+      P.L.add(text(this, P.left + 75, y + 50, "けいとう", 13, "#7a4a1e"));
+      // あげる（兄弟に プレゼント）。兄弟が いて、自分の お店のときだけ
+      if (!this.visit && Object.keys(store.family.kids).length > 1 && !a.hospitalUntil) {
+        card(this, P.L, P.left + 165, y + 50, 84, 26, () => { sfx.pop(); this.giftMenu(a, P); }, 0xffe2ec);
+        P.L.add(text(this, P.left + 165, y + 50, "🎁 あげる", 13, "#c0392b"));
+      }
+      if (S.stage(a, now) === "old") P.L.add(text(this, P.left + 230, y + 50, "もうすぐ いんたい（のんびり ぼくじょうへ）", 16, "#a0522d").setOrigin(0, 0.5));
+      const block = S.sellBlock(a, now), bx = P.left + P.w - 170;
+      if (a.sick && !a.hospitalUntil) {
+        P.L.add(button(this, bx, y, "vet", 56, () => { P.close(); this.scene.start("Vet"); }));
+        P.L.add(text(this, bx, y + 50, "じゅういさんへ", 16, "#c0392b"));
+      } else if (this.visit) { // 兄弟の お店：はんばいよう の子は その値段で 買える
+        if (purpose !== "sale") P.L.add(text(this, bx, y, "❤ だいじに\nそだてて いるよ", 18, "#c0392b"));
+        else if (block) P.L.add(text(this, bx, y, MESSAGE[block], 18, "#a0522d", { wordWrap: { width: 200 } }));
+        else {
+          const price = S.salePrice(a, now, tier);
+          card(this, P.L, bx - 20, y, 190, 56, () => {
+            const r = buyFromSibling(store.family, store.visitFrom, store.family.current, a.id, Date.now());
+            if (!r.ok) { sfx.no(); floatText(this, bx, y - 50, MESSAGE[r.why] || (r.why === "nomoney" ? MESSAGE.nomoney : "かえないよ"), "#a0522d"); return; }
+            store.setFamily(r.family); sfx.coin(); P.close(); this.redraw(); floatText(this, W / 2, 300, `かったよ！ -${coin(r.price)}（じぶんの おみせに いれたよ）`, "#2e7d32");
+          }, 0x2e9d6a);
+          P.L.add(text(this, bx - 20, y, `かう ${coin(price)}`, 20, "#ffffff"));
+        }
+      } else if (purpose === "keep") {
+        P.L.add(text(this, bx, y, "❤ だいじに\nそだてて いるよ", 18, "#c0392b"));
+      } else if (block) {
+        P.L.add(text(this, bx, y, MESSAGE[block], 18, "#a0522d", { wordWrap: { width: 200 } }));
+      } else {
+        // はんばいよう：お店での うりね（相場×たかめ等）。コインのボタンで えきへ おくる（こうけんが たまる）こともできる
+        const rate = marketRate(a.kind, now);
+        P.L.add(text(this, bx - 40, y - 30, "うりね " + coin(S.salePrice(a, now, tier)), 18, "#2e7d32"));
+        P.L.add(text(this, bx - 40, y - 6, `そうば ×${rate.toFixed(2)} ${rate >= 1 ? "↑" : "↓"}`, 15, rate >= 1 ? "#c0392b" : "#2a6fb5"));
+        P.L.add(button(this, bx + 50, y + 24, "truck", 44, () => this.sellMenu(a, P)));
+        P.L.add(text(this, bx + 50, y + 56, "えきへ", 13, "#7a4a1e"));
+        // しゅっか：その場で 相場×0.8 で売る（待たない かわりに やすい）
+        const sx = bx - 70;
+        card(this, P.L, sx, y + 26, 110, 40, () => {
+          const r = S.shipAnimal(store.shop, a.id, Date.now());
+          if (!r.ok) { sfx.no(); return; }
+          store.setShop(r.shop); sfx.coin(); P.close(); this.redraw(); floatText(this, W / 2, 300, `しゅっか したよ +${coin(r.coins)}`, "#2e7d32");
+        }, 0xffd9a0);
+        P.L.add(text(this, sx, y + 26, `しゅっか ${coin(S.shipPrice(a, now))}`, 13, "#7a4a1e"));
+      }
+    });
+    const cost = S.upgradeCost(p);
+    if (cost != null && !this.visit) { // 兄弟の お店では 広げられない
+      P.L.add(button(this, W / 2 - 140, P.top + P.h - 60, "hammer", 48, () => {
+        const r = S.upgradePen(store.shop, p.id);
+        if (!r.ok) { sfx.no(); floatText(this, W / 2, P.top + P.h - 120, MESSAGE[r.reason] || MESSAGE.nomoney, "#a0522d"); return; }
+        store.setShop(r.shop); sfx.coin(); P.close(); this.redraw();
+      }));
+      P.L.add(text(this, W / 2 + 20, P.top + P.h - 58, `ひろげる Lv${p.level + 1}  ${coin(cost)}`, 22, "#7a4a1e"));
     }
   }
 
-  // ---- お客さん ----
-  comeCustomer(req) {
-    const a = store.shop.rooms[req.room].animal;
-    const c = this.add.container(1400, 390).setDepth(300);
-    const body = img(this, 0, 0, "farmer", 150);
-    const bub = this.add.graphics().fillStyle(0xffffff, 1).fillRoundedRect(-110, -235, 220, 140, 40).fillTriangle(-10, -97, 20, -97, 0, -75);
-    c.add([body, bub, img(this, -45, -190, a.kind, 70), img(this, 50, -190, PLACES[req.place].kind === "zoo" ? "truck" : "ship", 62),
-      text(this, 0, -128, yen(priceOf(a)), 26, "#2e7d32")]);
-    c.setSize(240, 400).setInteractive({ useHandCursor: true });
-    c.on("pointerup", () => this.sendOff());
-    this.customer = { c, req };
-    sfx.pop();
-    this.tweens.add({ targets: c, x: 1130, duration: 1200, ease: "Cubic.easeOut" });
-    this.tweens.add({ targets: body, y: -8, duration: 400, yoyo: true, repeat: -1 });
-  }
-
-  sendOff() {
-    if (!this.customer) return;
-    const { room, place } = this.customer.req;
-    if (!isReady(store.shop.rooms[room].animal)) return;
-    sfx.whoosh();
-    this.scene.start("Departure", { room, place });
-  }
-
-  // ---- 小窓（しいれ・どうぶつ・へや） ----
-  openPanel(title) {
-    if (this.panel) this.panel.destroy();
-    const L = this.add.container(0, 0).setDepth(600);
-    this.panel = L;
-    const close = () => { L.destroy(); this.panel = null; this.refresh(); };
-    const dim = this.add.rectangle(0, 0, W, H, 0x000000, 0.45).setOrigin(0).setInteractive();
-    dim.on("pointerup", close);
-    const hit = this.add.rectangle(W / 2, H / 2, 1040, 600, 0xffffff, 0).setInteractive();
-    const bg = this.add.graphics().fillStyle(0xfffaf2, 1).fillRoundedRect(W / 2 - 520, H / 2 - 300, 1040, 600, 40);
-    const m = text(this, W / 2 + 330, H / 2 - 252, yen(store.shop.money), 30, "#7a4a1e");
-    L.add([dim, hit, bg, text(this, W / 2 - 150, H / 2 - 252, title, 40, "#7a4a1e"), img(this, W / 2 + 220, H / 2 - 252, "coin", 44), m]);
-    L.add(button(this, W / 2 + 470, H / 2 - 252, "back", 44, close, { ring: 0x9fd3e6 }));
-    return { L, close, setMoney: () => m.setText(yen(store.shop.money)) };
-  }
-
-  card(L, x, y, w, h, onTap) {
-    const g = this.add.graphics().fillStyle(0xffffff, 1).fillRoundedRect(x - w / 2, y - h / 2, w, h, 24);
-    const z = this.add.zone(x, y, w, h).setInteractive({ useHandCursor: true });
-    z.on("pointerup", onTap);
-    L.add([g, z]);
-  }
-
-  openMarket() {
-    const P = this.openPanel("エサの しいれ");
-    Object.entries(FOODS).forEach(([key, f], k) => {
-      const x = W / 2 - 375 + (k % 4) * 250, y = H / 2 - 95 + Math.floor(k / 4) * 230;
-      const now = text(this, x, y + 88, "", 20, "#a08060");
-      const setNow = () => now.setText("いま " + (store.shop.stock[key] || 0) + "こ");
-      this.card(P.L, x, y, 230, 210, () => {
-        const r = buyFood(store.shop, key);
-        if (!r.ok) { sfx.no(); floatText(this, x, y - 40, MESSAGE.nomoney, "#a0522d"); return; }
-        store.setShop(r.shop); sfx.coin(); setNow(); P.setMoney();
-        floatText(this, x, y - 40, "+" + f.qty + "こ");
+  // プレゼント：兄弟を えらんで わたす（相手の お店に 入れる所が 要る）
+  giftMenu(a, parentPanel) {
+    const others = Object.entries(store.family.kids).filter(([id]) => id !== store.family.current);
+    const P = panel(this, `${S.shineName(a)}${S.species(a.kind).name} を だれに あげる？`, { w: 900, h: 420 });
+    others.forEach(([id, k], i) => {
+      const x = W / 2 - ((others.length - 1) * 230) / 2 + i * 230, y = H / 2 + 10;
+      card(this, P.L, x, y, 200, 220, () => {
+        const r = giftToSibling(store.family, store.family.current, id, a.id, Date.now());
+        if (!r.ok) { sfx.no(); floatText(this, x, y - 130, MESSAGE[r.why] ? "あいての おみせ：" + MESSAGE[r.why] : "あげられないよ", "#a0522d"); return; }
+        store.setFamily(r.family); sfx.star(); P.close(); parentPanel.close(); this.redraw();
+        floatText(this, W / 2, 300, `${k.name || "きょうだい"}に プレゼント したよ！`, "#2e7d32");
       });
-      P.L.add([img(this, x, y - 45, key, 80), text(this, x, y + 15, f.name, 22, "#4a2c17"), text(this, x, y + 52, `${f.qty}こ ${yen(f.price)}`, 22, "#2e7d32"), now]);
-      setNow();
+      P.L.add([kidFace(this, x, y - 30, id, k, 110), text(this, x, y + 70, k.name || "", 18, "#4a2c17")]);
     });
   }
 
-  openAdopt(room) {
-    const type = store.shop.rooms[room].type;
-    const P = this.openPanel(ROOMS[type].name + "に すむ どうぶつ");
-    const list = adoptable(store.shop).filter(o => o.room === type);
-    if (!list.length) P.L.add(text(this, W / 2, H / 2 - 40, "すいそうの さかなは\n「すくい」で つかまえよう", 36, "#4a2c17", { lineSpacing: 14 }));
-    list.forEach((o, k) => {
-      const x = W / 2 - 250 * (list.length - 1) / 2 + k * 250, y = H / 2 - 40;
-      const d = ANIMALS[o.kind];
-      this.card(P.L, x, y, 230, 260, () => {
-        const r = adopt(store.shop, room, o.kind);
-        if (r.result !== "ok") { sfx.no(); floatText(this, x, y - 60, r.result === "locked" ? "まだ しいれられないよ" : MESSAGE.nomoney, "#a0522d"); return; }
-        store.setShop(r.shop); sfx.star(); P.close();
-        burst(this, this.rooms[room].x, this.rooms[room].y, "sparkles", 8, 40, 110);
+  // スタッフを雇う：1・3・7日（1日 100コイン）。雇っている あいだは 朝8時と夕方6時に お世話をする
+  staffMenu() {
+    const P = panel(this, "スタッフを やとう（るすの日の おせわ）", { w: 900, h: 480 });
+    const st = store.shop.staff, now = Date.now();
+    if (S.staffWorking(store.shop, now)) P.L.add(text(this, W / 2, P.top + 100, `いま やとって いるよ：あと ${Math.ceil((st.until - now) / 86400000)}にち`, 22, "#2e7d32"));
+    else P.L.add(text(this, W / 2, P.top + 100, "あさ 8じと ゆうがた 6じに エサ・きれい・そうじを してくれるよ", 20, "#4a2c17"));
+    if (st && st.short && st.short.length) P.L.add(text(this, W / 2, P.top + 138, `エサが たりなかったよ：${st.short.map(f => FOODS[f]?.name || f).join("・")}`, 18, "#c0392b"));
+    [1, 3, 7].forEach((d, i) => {
+      const x = W / 2 - 250 + i * 250, y = H / 2 + 50;
+      card(this, P.L, x, y, 210, 200, () => {
+        const r = S.hireStaff(store.shop, d, Date.now());
+        if (!r.ok) { sfx.no(); floatText(this, x, y - 120, MESSAGE.nomoney, "#a0522d"); return; }
+        store.setShop(r.shop); sfx.coin(); P.close(); this.scene.restart();
       });
-      const pic = img(this, x, y - 40, o.kind, 120);
-      const name = text(this, x, y + 50, o.locked ? "？？？" : d.name, 26, "#4a2c17");
-      const cost = text(this, x, y + 92, o.locked ? `${d.unlockSent}ひき おくると でる` : yen(o.cost), 22, o.locked ? "#a08060" : "#c0392b");
-      if (o.locked) pic.setTint(0x000000).setAlpha(0.3); else if (!o.afford) pic.setAlpha(0.45);
-      P.L.add([pic, name, cost]);
+      P.L.add([img(this, x, y - 40, "woman", 80), text(this, x, y + 30, `${d}にち`, 26, "#4a2c17"), text(this, x, y + 70, coin(S.STAFF_PAY * d), 22, "#c0392b")]);
     });
-    P.L.add(button(this, W / 2, H / 2 + 220, "hammer", 50, () => this.openBuild(room)));
-    P.L.add(text(this, W / 2 + 120, H / 2 + 222, "へやを たてかえる", 22, "#7a4a1e"));
+    P.L.add(text(this, W / 2, P.top + P.h - 40, "エサは おみせに ある ぶんを つかうよ。たくさん かって おこう", 17, "#7a4a1e"));
   }
 
-  openBuild(room) {
-    const P = this.openPanel("どの へやを たてる？");
-    const cur = store.shop.rooms[room].type;
-    Object.entries(ROOMS).forEach(([type, t], k) => {
-      const x = W / 2 - 375 + k * 250, y = H / 2;
-      this.card(P.L, x, y, 230, 360, () => {
-        if (type === cur) return;
-        const r = build(store.shop, room, type);
+  // 家系図：自分・父母・祖父母・ひい祖父母 の 色（色変わりの無い生き物は 名前だけ）
+  lineagePanel(a) {
+    const B = { name: m => (m ? MORPHS[a.kind]?.list[m]?.name : MORPHS[a.kind]?.base) || "？", paint: m => (m ? MORPHS[a.kind]?.list[m]?.paint : null) };
+    const line = a.line;
+    const P = panel(this, `${S.shineName(a)}${S.species(a.kind).name} の けいとう`, { w: 1100, h: 600 });
+    const row = (y, list, size, label) => {
+      P.L.add(text(this, P.left + 70, y, label, 18, "#7a4a1e"));
+      list.forEach((m, i) => {
+        const x = P.left + 200 + ((P.w - 260) / list.length) * (i + 0.5);
+        P.L.add(creature(this, x, y - 8, a.kind, size, false, B.paint(m)));
+        P.L.add(text(this, x, y + size / 2, B.name(m), 13, "#4a2c17"));
+      });
+    };
+    row(P.top + 120, [a.morph ?? null], 90, "じぶん");
+    if (!line) { P.L.add(text(this, W / 2, H / 2 + 40, a.father ? "" : "つった・かった こ なので おやは わからないよ", 22, "#7a4a1e")); return; }
+    row(P.top + 250, line[0], 70, "おや");
+    row(P.top + 370, line[1], 56, "そふぼ");
+    row(P.top + 480, line[2], 42, "ひいそふぼ");
+  }
+
+  sellMenu(a, parentPanel) {
+    const P = panel(this, "どこに おくる？", { w: 1000, h: 560 });
+    const now = Date.now();
+    S.placesFor(a.kind).forEach((id, i) => {
+      const x = W / 2 - 330 + (i % 4) * 220, y = P.top + 170 + Math.floor(i / 4) * 190, pl = store.shop.places[id];
+      card(this, P.L, x, y, 200, 170, () => {
+        const r = S.sell(store.shop, a.id, id, now);
+        if (!r.ok) { sfx.no(); return; }
+        store.setShop(r.shop); sfx.coin();
+        P.close(); parentPanel.close();
+        floatText(this, W / 2, 300, `ありがとう！ +${coin(r.reward)}`);
+        for (const g of r.gifts) floatText(this, W / 2, 380, `${pl.name} から おれいが とどいた！`, "#2e7d32");
+        this.redraw();
+      });
+      P.L.add([img(this, x, y - 30, PLACES[id].kind === "zoo" ? "lion" : "dolphin", 64), text(this, x, y + 30, pl.name, 16, "#4a2c17", { wordWrap: { width: 180 } }), text(this, x, y + 64, `こうけん ${pl.points}`, 16, "#2e7d32")]);
+    });
+  }
+
+  // ---- もようがえの小窓 ----
+  freeSpot(w, h) {
+    const { w: W2, h: H2 } = S.shopSize(store.shop);
+    for (let y = 0; y + h <= H2; y++) for (let x = 0; x + w <= W2; x++) if (S.canPlace(store.shop, x, y, w, h)) return [x, y];
+    return null;
+  }
+  buildMenu() {
+    const P = panel(this, "なにを たてる？");
+    // 水槽は たんすい（川・池の魚）と かいすい（海の魚）を べつに建てる
+    const items = [["cage"], ["tank", "fresh"], ["tank", "sea"], ["cold"], ["big"]];
+    items.forEach(([type, water], k) => {
+      const t = PENS[type], x = W / 2 - 420 + k * 210, y = H / 2;
+      card(this, P.L, x, y, 196, 300, () => {
+        const spot = this.freeSpot(2, 2);
+        if (!spot) { sfx.no(); floatText(this, x, y - 100, "ばしょが ないよ。ひろげよう", "#a0522d"); return; }
+        const r = S.buildPen(store.shop, type, ...spot, water);
+        if (!r.ok) { sfx.no(); floatText(this, x, y - 100, MESSAGE.nomoney, "#a0522d"); return; }
+        store.setShop(r.shop); sfx.coin(); P.close(); this.redraw();
+      });
+      const name = water ? `${S.WATER_NAME[water]}の すいそう` : t.name;
+      P.L.add([img(this, x, y - 70, water === "sea" ? "tropical" : water ? "fish" : t.icon, 84), text(this, x, y + 20, name, 19, "#4a2c17", { wordWrap: { width: 180 } }),
+        text(this, x, y + 64, coin(t.cost[0]), 22, "#c0392b")]);
+      if (water) P.L.add(text(this, x, y + 100, water === "sea" ? "うみの さかな" : "かわ・いけの さかな", 14, "#7a6a5a"));
+    });
+  }
+  furnitureMenu() {
+    const P = panel(this, "かぐを かう");
+    const now = Date.now(), sea = season(store.shop.startedAt, now);
+    Object.entries(FURNITURE).filter(([, f]) => f.season == null || f.season === sea).forEach(([kind, f], k) => {
+      const x = W / 2 - 400 + (k % 5) * 200, y = P.top + 180 + Math.floor(k / 5) * 210;
+      card(this, P.L, x, y, 180, 190, () => {
+        const spot = this.freeSpot(f.w, f.h);
+        if (!spot) { sfx.no(); floatText(this, x, y - 80, "ばしょが ないよ", "#a0522d"); return; }
+        const r = S.buyFurniture(store.shop, kind, ...spot, now);
         if (!r.ok) { sfx.no(); floatText(this, x, y - 80, MESSAGE.nomoney, "#a0522d"); return; }
-        store.setShop(r.shop); sfx.coin(); P.close();
-        burst(this, this.rooms[room].x, this.rooms[room].y, "sparkles", 8, 40, 110);
+        store.setShop(r.shop); sfx.coin(); P.close(); this.redraw();
       });
-      const lives = Object.entries(ANIMALS).filter(([, d]) => d.room === type).map(([k2]) => k2);
-      P.L.add([img(this, x, y - 110, t.icon, 90), text(this, x, y - 30, t.name, 24, "#4a2c17"),
-        text(this, x, y + 10, type === cur ? "いまの へや" : yen(t.cost), 22, type === cur ? "#a08060" : "#c0392b")]);
-      lives.slice(0, 4).forEach((k2, j) => {
-        const seen = store.shop.seen.includes(k2);
-        const s = img(this, x - 38 + (j % 2) * 76, y + 80 + Math.floor(j / 2) * 70, k2, 56);
-        if (!seen) s.setTint(0x000000).setAlpha(0.25);
-        P.L.add(s);
+      P.L.add([img(this, x, y - 40, f.icon, 70), text(this, x, y + 20, f.name, 16, "#4a2c17", { wordWrap: { width: 170 } }), text(this, x, y + 62, coin(f.price), 18, "#c0392b")]);
+    });
+  }
+  expandMenu() {
+    const next = SHOP_SIZES[store.shop.size + 1];
+    const P = panel(this, "おみせを ひろげる", { w: 700, h: 400 });
+    if (!next) { P.L.add(text(this, W / 2, H / 2, "これ いじょう ひろげられないよ", 28, "#4a2c17")); return; }
+    P.L.add(text(this, W / 2, H / 2 - 30, `${next.w}×${next.h} マスに ひろげる  ${coin(next.cost)}`, 28, "#4a2c17"));
+    P.L.add(button(this, W / 2, H / 2 + 80, "hammer", 64, () => {
+      const r = S.expandShop(store.shop);
+      if (!r.ok) { sfx.no(); floatText(this, W / 2, H / 2 + 20, MESSAGE.nomoney, "#a0522d"); return; }
+      store.setShop(r.shop); sfx.star(); this.scene.restart();
+    }));
+  }
+  decorMenu() {
+    const P = panel(this, "かざり（かべ・かんばん・やね）");
+    Object.entries(DECOR).forEach(([part, def], row) => {
+      const y = P.top + 140 + row * 160;
+      P.L.add(text(this, P.left + 90, y, def.label, 22, "#7a4a1e"));
+      Object.entries(def.items).forEach(([id, it], k) => {
+        const x = P.left + 300 + k * 200, owned = store.shop.owned[part].includes(id), on = store.shop.decor[part] === id;
+        card(this, P.L, x, y, 180, 120, () => {
+          const r = S.buyDecor(store.shop, part, id);
+          if (!r.ok) { sfx.no(); floatText(this, x, y - 60, MESSAGE.nomoney, "#a0522d"); return; }
+          store.setShop(r.shop); sfx.coin(); this.scene.restart();
+        }, on ? 0xffe28a : 0xffffff);
+        P.L.add([text(this, x, y - 18, it.name, 20, "#4a2c17"), text(this, x, y + 22, owned ? "もっている" : coin(it.price), 18, owned ? "#2e7d32" : "#c0392b")]);
       });
     });
+  }
+  itemMenu(it) {
+    const P = panel(this, FURNITURE[it.kind].name, { w: 600, h: 320 });
+    P.L.add(button(this, W / 2, H / 2 + 20, "no", 64, () => { store.setShop(S.removeItem(store.shop, it.id).shop); sfx.sweep(); P.close(); this.redraw(); }));
+    P.L.add(text(this, W / 2, H / 2 + 90, "しまう（すてる）", 20, "#a0522d"));
+  }
+  penEditMenu(p) {
+    if (p.animals.length) { this.penPanel(p.id); return; }
+    const P = panel(this, PENS[p.type].name, { w: 600, h: 320 });
+    P.L.add(button(this, W / 2, H / 2 + 20, "no", 64, () => { store.setShop(S.removePen(store.shop, p.id).shop); sfx.sweep(); P.close(); this.redraw(); }));
+    P.L.add(text(this, W / 2, H / 2 + 90, "とりこわす", 20, "#a0522d"));
   }
 }
