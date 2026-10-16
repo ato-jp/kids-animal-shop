@@ -8,8 +8,8 @@
 import { species, findPen, whyNoRoom, shineOf, newAnimal, placesFor, priceOf, addPoints } from "./shop.js";
 import { ANIMALS } from "../data/animals.js";
 import { gameYears, GAME_YEAR_MS } from "./time.js";
-import { roadNet, exhibitOpen, findExhibitSpot, canPlaceAt } from "./town.js";
-import { DEFAULT_EXHIBITS, EXHIBIT_SIZE } from "../data/town.js";
+import { roadNet, exhibitOpen, findExhibitSpot, canPlaceAt, defaultTown } from "./town.js";
+import { DEFAULT_EXHIBITS, EXHIBIT_SIZE, TOWN_VERSION } from "../data/town.js";
 
 export const ZOO_FEE = 1, ZOO_KEEP = 10; // 入園料は 1人1コイン、飼育員さんは てんじ1つ 1日10コイン（2026-10-16 tools/sim_zoo.mjs で 3か月ほどに合わせた）
 export const FACILITIES = {
@@ -71,7 +71,13 @@ export function ensureFacilities(s) {
     for (const f of ["zoo", "aqua"]) { const fac = s[f]; fac.level = [0, 2, 3, 5][old.gate] || 0; while (LEVELS[fac.level].slots < fac.exhibits.length) fac.level++; }
     Object.assign(s.aqua, { total: old.total || 0, given: old.given || 0, gifts: old.gifts || [] });
   }
-  // 町（版3）より前の 展示には 場所が ない：はじめの 場所 → 道に 面した あいている所 の じゅんに 置く
+  // 町の 版が かわったら（版4 クォータービューで マスの 大きさが かわった）、町も 展示の 場所も はじめから 置きなおす
+  if (s.exVer !== TOWN_VERSION) {
+    if (s.town && s.town.version !== TOWN_VERSION) s.town = defaultTown();
+    for (const f of ["zoo", "aqua"]) for (const ex of s[f].exhibits) { ex.x = null; ex.y = null; }
+    s.exVer = TOWN_VERSION;
+  }
+  // 場所の ない 展示：はじめの 場所 → 道に 面した あいている所 の じゅんに 置く
   for (const f of ["zoo", "aqua"]) for (const ex of s[f].exhibits) {
     delete ex.slot;
     if (ex.x != null) continue;

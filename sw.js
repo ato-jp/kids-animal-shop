@@ -1,7 +1,7 @@
 // オフライン用の控え。入れたときに files.json（build_site.sh が作る全ファイルの一覧）を全部控える。
 // 以後はまず控えから出して速く起動し、裏でネットから取り直して控えを新しくする。
 // 新しい版の 控えが できたら、ひらいている 画面を 1回だけ 読みなおす（main.js の controllerchange）。
-const CACHE = "kas-v21";
+const CACHE = "kas-v22";
 
 self.addEventListener("install", e => {
   e.waitUntil((async () => {

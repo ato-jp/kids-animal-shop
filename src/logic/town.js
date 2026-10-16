@@ -1,19 +1,20 @@
 // 自分の町（箱庭）のルール。版3（docs/town-v3.md）。画面から切りはなした純粋な計算（記録は shop.town と shop.zoo/aqua の exhibits）。
 // 置いてある物は { id, kind, x, y }。kind は TOWN_BUILDINGS か TOWN_DECOR の名前、展示は "ex_<種類>"。重なる所・はみ出す所には置けない。
-import { TOWN_COLS, TOWN_ROWS, TOWN_BUILDINGS, TOWN_DECOR, TOWN_DEFAULT, TOWN_APPEAL_MAX, TOWN_VERSION, EXHIBIT_SIZE } from "../data/town.js";
+import { TOWN_COLS, TOWN_BUILDINGS, TOWN_DECOR, TOWN_DEFAULT, TOWN_APPEAL_MAX, TOWN_VERSION, EXHIBIT_SIZE } from "../data/town.js";
 
 const clone = o => JSON.parse(JSON.stringify(o));
 export const townSpec = kind => TOWN_BUILDINGS[kind] || TOWN_DECOR[kind] || (kind.startsWith("ex_") && EXHIBIT_SIZE[kind.slice(3)] ? { w: EXHIBIT_SIZE[kind.slice(3)][0], h: EXHIBIT_SIZE[kind.slice(3)][1], exhibit: true } : null);
 export const isBuilding = kind => !!TOWN_BUILDINGS[kind];
 
-// 町の よこはば：園の だんかいで ひろがる（2026-10-16 パパ決定「だんかいで 町の 広さが 増える」）。2つの だんかいの 合計×6マス、100マスまで
-export const townCols = shop => Math.min(100, TOWN_COLS + 6 * ((shop.zoo?.level || 0) + (shop.aqua?.level || 0)));
+// 町の 大きさ（正方形の 1辺）：園の だんかいで ひろがる（2026-10-16 パパ決定「だんかいで 町の 広さが 増える」）。
+// 版4（クォータービュー）から たて・よこ とも 2つの だんかいの 合計×2マス、44マスまで
+export const townCols = shop => Math.min(44, TOWN_COLS + 2 * ((shop.zoo?.level || 0) + (shop.aqua?.level || 0)));
 export const colsOf = town => town.cols || TOWN_COLS;
 
 export function defaultTown() {
   return { version: TOWN_VERSION, items: TOWN_DEFAULT.map(([kind, x, y], i) => ({ id: "t" + (i + 1), kind, x, y })), nextId: TOWN_DEFAULT.length + 1 };
 }
-// 前の版の町（64pxの マス）は はじめの ならびに もどす（版3は 2026-10-16。前の町は 1日ほどしか 使っていない）。
+// 前の版の町は はじめの ならびに もどす（版3・版4は 2026-10-16。前の町は 1日ほどしか 使っていない）。
 // あとから ふえた建物は 前の ならびを こわさず あいている所に足す
 export const townOf = shop => {
   let t = shop.town && shop.town.version === TOWN_VERSION ? shop.town : defaultTown();
@@ -21,7 +22,7 @@ export const townOf = shop => {
   for (const kind of Object.keys(TOWN_BUILDINGS)) {
     if (t.items.some(i => i.kind === kind)) continue;
     const sp = TOWN_BUILDINGS[kind], def = TOWN_DEFAULT.find(d => d[0] === kind);
-    const spots = [...(def ? [[def[1], def[2]]] : []), ...Array.from({ length: t.cols * TOWN_ROWS }, (_, k) => [k % t.cols, Math.floor(k / t.cols)])];
+    const spots = [...(def ? [[def[1], def[2]]] : []), ...Array.from({ length: t.cols * t.cols }, (_, k) => [k % t.cols, Math.floor(k / t.cols)])];
     const at = spots.find(([x, y]) => canPlaceTown(t, x, y, sp.w, sp.h));
     if (at) t = { ...t, items: [...t.items, { id: "b_" + kind, kind, x: at[0], y: at[1] }] };
   }
@@ -35,7 +36,7 @@ export function mapOf(shop) {
 }
 
 export function canPlaceTown(town, x, y, w, h, skipId = null) {
-  if (x < 0 || y < 0 || x + w > colsOf(town) || y + h > TOWN_ROWS) return false;
+  if (x < 0 || y < 0 || x + w > colsOf(town) || y + h > colsOf(town)) return false;
   return !town.items.some(it => {
     if (it.id === skipId) return false;
     const s = townSpec(it.kind);
@@ -63,7 +64,7 @@ export function buyTownDecor(shop, kind, x = null, y = null) {
   if (shop.money < d.price) return { shop, ok: false, reason: "nomoney" };
   const map = mapOf(shop), town = clone(townOf(shop)), cols = town.cols;
   delete town.cols;
-  const spots = x != null ? [[x, y]] : Array.from({ length: cols * TOWN_ROWS }, (_, k) => [k % cols, Math.floor(k / cols)]);
+  const spots = x != null ? [[x, y]] : Array.from({ length: cols * cols }, (_, k) => [k % cols, Math.floor(k / cols)]);
   for (const [px, py] of spots) {
     if (!canPlaceTown(map, px, py, d.w, d.h)) continue;
     const id = "t" + town.nextId++;
@@ -87,7 +88,7 @@ export function removeTownDecor(shop, id) {
 }
 
 const key = (x, y) => x + "," + y;
-// せんろ が えき から 町のはし（左か右）まで つながっているか
+// せんろ が えき から 町のはし（x=0 か いちばん おく）まで つながっているか
 export function railConnected(shop) {
   const town = townOf(shop), st = town.items.find(i => i.kind === "station");
   if (!st) return false;
@@ -108,7 +109,7 @@ export function railConnected(shop) {
   return false;
 }
 
-// お客さんの 歩ける 道（みち・つちの みち・じゃり）で、町の 左はし（入口）から つながっている マス
+// お客さんの 歩ける 道（みち・つちの みち・じゃり）で、町の 入口（x=0 の へり）から つながっている マス
 const WALK = new Set(["road", "dirt", "gravel"]);
 export function roadNet(shop) {
   const town = townOf(shop), roads = new Set(town.items.filter(i => WALK.has(i.kind)).map(i => key(i.x, i.y)));
@@ -133,7 +134,7 @@ export function exhibitOpen(shop, ex, net = roadNet(shop)) {
 // 展示を 置ける 所を さがす（入口からの 道に 面した 所を さきに）
 export function findExhibitSpot(shop, type) {
   const [w, h] = EXHIBIT_SIZE[type], map = mapOf(shop), net = roadNet(shop), free = [];
-  for (let y = 0; y + h <= TOWN_ROWS; y++) for (let x = 0; x + w <= map.cols; x++) if (canPlaceTown(map, x, y, w, h)) free.push([x, y]);
+  for (let y = 0; y + h <= map.cols; y++) for (let x = 0; x + w <= map.cols; x++) if (canPlaceTown(map, x, y, w, h)) free.push([x, y]);
   return free.find(([x, y]) => exhibitOpen(shop, { type, x, y }, net)) || free[0] || null;
 }
 
