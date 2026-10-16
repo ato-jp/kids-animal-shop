@@ -1,13 +1,14 @@
 // オフライン用の控え。入れたときに files.json（build_site.sh が作る全ファイルの一覧）を全部控える。
 // 以後はまず控えから出して速く起動し、裏でネットから取り直して控えを新しくする。
-// そのため、公開し直した内容が効くのは「次にアプリを開いたとき」。
-const CACHE = "kas-v19";
+// 新しい版の 控えが できたら、ひらいている 画面を 1回だけ 読みなおす（main.js の controllerchange）。
+const CACHE = "kas-v20";
 
 self.addEventListener("install", e => {
   e.waitUntil((async () => {
     const cache = await caches.open(CACHE);
     const files = await (await fetch("files.json", { cache: "no-store" })).json();
-    await cache.addAll(["./", ...files]);
+    // ブラウザに 残った 古いファイルを つかまないよう、かならず ネットから 取り直す（2026-10-16 タブレットに 新しい版が 出なかった）
+    await cache.addAll(["./", ...files].map(f => new Request(f, { cache: "reload" })));
     await self.skipWaiting();
   })());
 });

@@ -50,5 +50,9 @@ document.addEventListener("pointerup", goFullscreen);
 const isDev = ["localhost", "127.0.0.1"].includes(location.hostname);
 if (isDev) import("./store.js").then(m => { window.__kas = { game, store: m.store }; }); // 手元での動作確認用
 if ("serviceWorker" in navigator && location.protocol === "https:" && !isDev) {
-  navigator.serviceWorker.register("sw.js").catch(() => {});
+  // 前の版が 動いていて 新しい版の 控えが できたら、その場で 1回 読みなおす（子どもが 2回 開かなくても 新しい版に なる）
+  const had = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (had && !reloaded) { reloaded = true; location.reload(); } });
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(r => r.update()).catch(() => {});
 }
