@@ -39,7 +39,7 @@ export class Zoo extends Phaser.Scene {
     const title = `${store.kid?.name ? store.kid.name + "の " : ""}${lv.name} ${Z.FACILITIES[f].name}${this.visit ? "（みるだけ）" : ""}`;
     text(this, 40, 128, title, 28, "#ffffff", { stroke: f === "zoo" ? "#2e6b4f" : "#0b2236", strokeThickness: 7 }).setOrigin(0, 0.5);
     const nk = Z.ninki(shop, f), nextLv = Z.LEVELS[z.level + 1];
-    text(this, 690, 116, `⭐ にんき ${nk}${nextLv ? `（つぎは ${nextLv.need}）` : ""}`, 20, "#fff4a8", { stroke: "#2e6b4f", strokeThickness: 6 });
+    this.ninkiGauge(nk, nextLv ? nextLv.need[f] : null);
     if (!this.visit) text(this, 690, 144, `きのう ${z.yesterday ?? "—"}にん ・ あしたの よそう ${Z.zooVisitors(shop, f)}にん`, 17, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 5 });
     // 大きくする（だんかい。お客さんの倍率と てんじの数が ふえる）
     card(this, this.add.container(0, 0), 1140, 128, 200, 52, () => { if (this.visit) return; sfx.pop(); this.levelMenu(); }, Z.LEVELS[z.level + 1] ? 0xfff1c9 : 0xe6f4dc);
@@ -56,6 +56,16 @@ export class Zoo extends Phaser.Scene {
     else if (f === "aqua" && Z.ZOO_GIFTS[z.given || 0] && !this.visit) text(this, W / 2, 668, `つぎの おくりもの まで あと ${Z.ZOO_GIFTS[z.given || 0].visitors - (z.total || 0)}にん`, 18, "#fff4a8", hint);
     this.showGuide();
     text(this, W / 2, 698, `にゅうえんりょう 1にん ${Z.ZOO_FEE}コイン　しいくいんさん 1ぴき 1にち ${Z.ZOO_KEEP}コイン（${coin(Z.zooKeepCost(shop, f))}）`, 18, "#ffffff", { stroke: "#2e6b4f", strokeThickness: 5 });
+  }
+
+  // にんきの ゲージ：星が たまって いっぱいで 光る（数字が読めない子にも 分かるように。数字は 小さく そえる）
+  ninkiGauge(nk, need) {
+    const x = 560, y = 116, w = 250, g = this.add.graphics();
+    const r = need ? Math.min(1, nk / need) : 1;
+    g.fillStyle(0x000000, 0.35).fillRoundedRect(x, y - 11, w, 22, 11).fillStyle(r >= 1 ? 0xffd54a : 0xffb347, 1).fillRoundedRect(x, y - 11, Math.max(22, w * r), 22, 11);
+    const star = text(this, x - 6, y, "⭐", 30);
+    text(this, x + w / 2, y, need ? `にんき ${nk} / ${need}` : `にんき ${nk}`, 15, "#ffffff", { stroke: "#5a3a10", strokeThickness: 4 });
+    if (r >= 1 && need) { this.tweens.add({ targets: star, scale: 1.3, duration: 450, yoyo: true, repeat: -1 }); text(this, x + w + 70, y, "おおきく できるよ！", 15, "#fff4a8", { stroke: "#5a3a10", strokeThickness: 4 }); }
   }
 
   lockedSlot(x, y) {
@@ -153,6 +163,11 @@ export class Zoo extends Phaser.Scene {
       }, 0xfff6e0);
       P.L.add([creature(this, x, y - 6, a.kind, 76, S.shineOf(a), S.paintOf(a)), text(this, x, y + 40, S.species(a.kind).name, 13, "#4a2c17")]);
     });
+    if (ex.animals.length) { // なかを のぞく（全画面。なでる・あそぶ）
+      const vx = P.left + P.w - 390, vy = P.top + 100;
+      card(this, P.L, vx, vy, 200, 44, () => { sfx.pop(); P.close(); this.scene.start("PenView", { exhibit: ex.id, f: this.f }); }, 0xd6ecff);
+      P.L.add(text(this, vx, vy, "👀 なかを みる", 18, "#1f4f7a"));
+    }
     if (ex.animals.length) { // 赤ちゃんを うませる／とめる
       const on = ex.breed !== false, bx = P.left + P.w - 150, by = P.top + 100;
       card(this, P.L, bx, by, 220, 44, () => {
@@ -177,6 +192,8 @@ export class Zoo extends Phaser.Scene {
   showGuide() {
     const z = store.shop[this.f];
     if (this.visit) return;
+    const next = Z.LEVELS[z.level + 1]; // にんきと お金が たりたら（はじめの 2だんかいだけ）「おおきく しよう」
+    if (next && z.level < 2 && Z.ninki(store.shop, this.f) >= next.need[this.f] && store.shop.money >= next.cost) { guide(this, 1140, 128, "おおきく しよう", 60); return; }
     const empty = z.exhibits.find(e => !e.animals.length);
     if (empty) { const [x, y] = slotXY(empty.slot); guide(this, x + SW / 2, y + SH / 2 - 70, "おみせの こを つれて こよう", 60); return; }
     if (z.exhibits.length < 2) { const free = [...Array(Z.LEVELS[z.level].slots).keys()].find(i => !z.exhibits.some(e => e.slot === i)); const [x, y] = slotXY(free); guide(this, x + SW / 2, y + SH / 2 - 70, "てんじを つくろう", 60); }
@@ -240,7 +257,7 @@ export class Zoo extends Phaser.Scene {
     if (!next) { P.L.add(text(this, W / 2, P.top + 220, "いちばん おおきい よ！", 26, "#2e7d32")); return; }
     P.L.add(text(this, W / 2, P.top + 180, `つぎ：${next.name} ${name}（てんじ ${next.slots}・おきゃくさん ×${next.k}）`, 22, "#4a2c17"));
     const nk = Z.ninki(store.shop, this.f), gift = next.gift?.[this.f];
-    P.L.add(text(this, W / 2, P.top + 225, `⭐ にんき ${nk} / ${next.need}${nk < next.need ? `（あと ${next.need - nk}。しゅるいを ふやすと あがるよ）` : " OK！"}`, 19, nk < next.need ? "#c0392b" : "#2e7d32"));
+    P.L.add(text(this, W / 2, P.top + 225, `⭐ にんき ${nk} / ${next.need[this.f]}${nk < next.need[this.f] ? `（あと ${next.need[this.f] - nk}。しゅるいを ふやすと あがるよ）` : " OK！"}`, 19, nk < next.need[this.f] ? "#c0392b" : "#2e7d32"));
     if (gift) P.L.add(text(this, W / 2, P.top + 258, `🎉 おいわいに ${S.species(gift).name}が 2ひき やってくるよ`, 19, "#1f6fb2"));
     card(this, P.L, W / 2, P.top + 330, 320, 60, () => {
       const r = Z.upgradeFacility(store.shop, this.f, Date.now());

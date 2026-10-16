@@ -13,7 +13,7 @@ import { townOf, townSpec, isBuilding, moveTownItem, buyTownDecor, removeTownDec
 import { TOWN_TILE as T, TOWN_TOP, TOWN_COLS, TOWN_ROWS, TOWN_DECOR } from "../data/town.js";
 import { SHINES } from "../data/shine.js";
 import { MORPHS } from "../data/morphs.js";
-import { LEVELS } from "../logic/zoo.js";
+import { LEVELS, ninki } from "../logic/zoo.js";
 import { prizeReady } from "../logic/prize.js";
 import { eventOn, presentReady, takePresent } from "../logic/events.js";
 import { sfx } from "../sound/sfx.js";
@@ -212,9 +212,13 @@ export class Town extends Phaser.Scene {
     const town = townOf(shop), at = kind => { const it = town.items.find(i => i.kind === kind), sp = townSpec(kind); return [it.x * T + (sp.w * T) / 2, TOWN_TOP + it.y * T + (sp.h * T) / 2]; };
     if (this.edit || store.visitFrom) { guide(this, null); return; }
     let target = null;
-    if (shopLevel(shop) >= 1) { guide(this, null); return; }
-    else if (this.badge("shop")) target = ["shop", "おせわを しよう"];
-    else if (!shop.fishCount) target = ["fishing", "つりに いこう"];
+    const aq = shop.aqua, aqEmpty = aq && !aq.exhibits.some(e => e.animals.length), aqNext = aq && LEVELS[aq.level + 1];
+    const first = shopLevel(shop) < 1; // おせわ・つり・うる の 指は お店レベル0の あいだ。すいぞくかんの 指は ペンギンが 来るまで
+    if (first && this.badge("shop")) target = ["shop", "おせわを しよう"];
+    else if (first && !shop.fishCount) target = ["fishing", "つりに いこう"];
+    else if (aq && aq.level === 0 && aqEmpty && shop.pens.some(p => p.type === "tank" && p.animals.length)) target = ["aqua", "すいぞくかんに みせよう"]; // 2026-10-16 案内に 園を足した
+    else if (aq && aq.level === 0 && ninki(shop, "aqua") >= aqNext.need.aqua && shop.money >= aqNext.cost) target = ["aqua", "おおきく しよう"];
+    else if (!first) { guide(this, null); return; }
     else if (!shop.pens.some(p => p.purpose === "sale") && !(shop.earned > 100)) target = ["shop", "うる こを きめよう"];
     if (!target) { guide(this, null); return; }
     const [x, y] = at(target[0]);

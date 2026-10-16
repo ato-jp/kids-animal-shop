@@ -13,6 +13,9 @@ import { MESSAGE } from "./Shop.js";
 import { sfx } from "../sound/sfx.js";
 import { ambient } from "../ui/ambient.js";
 import { bgm } from "../sound/bgm.js";
+import { EXHIBITS } from "../logic/zoo.js";
+
+const EXHIBIT_NAME = Object.fromEntries(Object.entries(EXHIBITS).map(([k, v]) => [k, v.name]));
 
 const TOP = 84, VH = H - TOP;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -27,11 +30,12 @@ const AQ_PX = { 1: 90, 2: 140, 3: 200, 9: 260 };
 export class PenView extends Phaser.Scene {
   constructor() { super("PenView"); }
 
-  create({ penId, readonly = false }) {
-    this.readonly = readonly;
+  create({ penId, readonly = false, exhibit = null, f = null }) {
+    this.ex = exhibit ? { id: exhibit, f } : null; // 園の てんじを のぞく（2026-10-16）：世話は 飼育員さん。なでる・あそぶ・見るだけ
+    this.readonly = readonly || !!exhibit;
     this.penId = penId;
     const p = this.pen();
-    if (!p) { this.scene.start("Shop"); return; }
+    if (!p) { this.scene.start(this.ex ? "Zoo" : "Shop", this.ex ? { f } : undefined); return; }
     bgm.play(p.type === "tank" ? "fish" : "shop");
     this.type = p.type;
     this.water = PENS[p.type].water;
@@ -42,7 +46,8 @@ export class PenView extends Phaser.Scene {
     this.drawFront();
     if (p.type !== "tank") ambient(this, { indoor: p.type === "cage", depth: 88 }); // 水槽は お店の中の明かり
     topBar(this, { back: false });
-    if (readonly) {
+    if (this.ex) this.exhibitBar(p);
+    else if (readonly) {
       button(this, W - 70, H - 60, "back", 56, () => { sfx.pop(); this.scene.start("Shop"); }).setDepth(101);
       text(this, W - 70, H - 18, "もどる", 17, "#ffffff", { stroke: "#00000080", strokeThickness: 4 }).setDepth(101);
     } else this.makeBar(p);
@@ -65,7 +70,13 @@ export class PenView extends Phaser.Scene {
     this.events.once("shutdown", () => this.game.events.off("shop-changed", onChange));
   }
 
-  pen() { return store.shop.pens.find(q => q.id === this.penId); }
+  pen() {
+    if (!this.ex) return store.shop.pens.find(q => q.id === this.penId);
+    const e = store.shop[this.ex.f]?.exhibits.find(x => x.id === this.ex.id);
+    if (!e) return null;
+    const type = { land: "cage", big: "big", cold: "cold", fresh: "tank", sea: "tank" }[e.type]; // 見た目は お店の 柵・水槽と 同じ描き方
+    return { id: e.id, type, level: 3, dirty: false, animals: e.animals, water: e.type === "sea" ? "sea" : e.type === "fresh" ? "fresh" : undefined, exType: e.type };
+  }
   floorY(z) { return TOP + VH * (this.type === "tank" ? 0.78 + 0.1 * z : 0.62 + 0.22 * z); }
 
   // ---- 背景（動かない所） ----
@@ -220,6 +231,27 @@ export class PenView extends Phaser.Scene {
     const a = f.a, now = Date.now();
     const label = `${a.name ? "「" + a.name + "」 " : ""}${S.shineName(a)}${f.d.name} ${a.sex === "m" ? "♂" : "♀"}  ${{ baby: "あかちゃん", young: "こども", adult: "おとな", old: "おとしより" }[S.stage(a, now)]}`;
     floatText(this, clamp(f.spr.x, 200, W - 200), f.spr.y - f.px * f.k * 0.6, label, this.type === "tank" ? "#ffffff" : "#4a2c17");
+  }
+
+  // 園の てんじ：あそぶ（陸だけ）と もどる。前を お客さんが ゆっくり 通る
+  exhibitBar(p) {
+    const items = [...(this.type === "tank" ? [] : [["star", "あそぶ", () => this.toy()]]), ["back", "もどる", () => this.scene.start("Zoo", { f: this.ex.f })]];
+    items.forEach(([icon, label, fn], i) => {
+      const x = W - 70 - (items.length - 1 - i) * 130;
+      button(this, x, H - 60, icon, 56, () => { sfx.pop(); fn(); }).setDepth(101);
+      text(this, x, H - 18, label, 17, "#ffffff", { stroke: "#00000080", strokeThickness: 4 }).setDepth(101);
+    });
+    text(this, 40, TOP + 26, `${EXHIBIT_NAME[p.exType]}　${p.animals.length}ひき`, 22, this.type === "tank" ? "#ffffff" : "#4a2c17", { stroke: this.type === "tank" ? "#00000060" : "#ffffff80", strokeThickness: 4 }).setOrigin(0, 0.5).setDepth(101);
+    const pp = this.textures.getTextureKeys().filter(k => k.startsWith("pp_"));
+    const walker = () => {
+      const fromLeft = Math.random() < 0.5, y = H - 30;
+      const im = pp.length ? this.add.image(fromLeft ? -60 : W + 60, y, pp[Math.floor(Math.random() * pp.length)]).setOrigin(0.5, 1) : img(this, fromLeft ? -60 : W + 60, y - 40, ["man", "woman", "boy", "girl"][Math.floor(Math.random() * 4)], 80);
+      if (pp.length) im.setScale(170 / im.height).setFlipX(!fromLeft);
+      im.setDepth(99).setAlpha(0.92);
+      this.tweens.add({ targets: im, x: fromLeft ? W + 60 : -60, duration: 14000 + Math.random() * 6000, onComplete: () => im.destroy() });
+    };
+    walker();
+    this.time.addEvent({ delay: 7000, loop: true, callback: walker });
   }
 
   // ---- 下の帯：世話のボタン ----

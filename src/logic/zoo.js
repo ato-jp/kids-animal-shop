@@ -8,19 +8,19 @@ import { species, findPen, whyNoRoom, shineOf, newAnimal, placesFor, priceOf, ad
 import { ANIMALS } from "../data/animals.js";
 import { gameYears, GAME_YEAR_MS } from "./time.js";
 
-export const ZOO_FEE = 2, ZOO_KEEP = 2;
+export const ZOO_FEE = 1, ZOO_KEEP = 10; // 入園料は 1人1コイン、飼育員さんは てんじ1つ 1日10コイン（2026-10-16 tools/sim_zoo.mjs で 3か月ほどに合わせた）
 export const FACILITIES = {
   zoo: { name: "どうぶつえん", types: ["land", "big"], icon: "lion" },
   aqua: { name: "すいぞくかん", types: ["fresh", "sea", "cold"], icon: "dolphin" },
 };
-// need＝大きくするのに要る にんき（2026-10-16 壁打ち5回め：お金＋にんき）。gift＝大きくした お祝いに届く子（オス・メス）
+// need＝大きくするのに要る にんき（2026-10-16 壁打ち5回め：お金＋にんき。どうぶつえんは 見せられる しゅるいが すくないので 低め。数は tools/sim_zoo.mjs で 決めた）。gift＝大きくした お祝いに届く子（オス・メス）
 export const LEVELS = [
-  { name: "おんぼろ", slots: 2, k: 1, cost: 0, need: 0 },
-  { name: "ちいさな", slots: 3, k: 1.3, cost: 800, need: 8, gift: { aqua: "penguin" } },
-  { name: "ふつうの", slots: 4, k: 1.6, cost: 2000, need: 25, gift: { zoo: "zebra", aqua: "seal" } },
-  { name: "きれいな", slots: 5, k: 2, cost: 4500, need: 50, gift: { zoo: "lion" } },
-  { name: "りっぱな", slots: 6, k: 2.5, cost: 9000, need: 90, gift: { zoo: "giraffe" } },
-  { name: "おおきな", slots: 8, k: 3, cost: 15000, need: 150, gift: { zoo: "elephant" } },
+  { name: "おんぼろ", slots: 2, k: 1, cost: 0, need: { zoo: 0, aqua: 0 } },
+  { name: "ちいさな", slots: 3, k: 1.3, cost: 800, need: { zoo: 8, aqua: 8 }, gift: { aqua: "penguin" } },
+  { name: "ふつうの", slots: 4, k: 1.6, cost: 2000, need: { zoo: 25, aqua: 30 }, gift: { zoo: "zebra", aqua: "seal" } },
+  { name: "きれいな", slots: 5, k: 2, cost: 4500, need: { zoo: 55, aqua: 70 }, gift: { zoo: "lion" } },
+  { name: "りっぱな", slots: 6, k: 2.5, cost: 9000, need: { zoo: 90, aqua: 140 }, gift: { zoo: "giraffe" } },
+  { name: "おおきな", slots: 8, k: 3, cost: 15000, need: { zoo: 125, aqua: 240 }, gift: { zoo: "elephant" } },
 ];
 // にんき＝しゅるい×6 ＋ あたま数 ＋ キラキラ（ブロンズ2・シルバー4・ゴールド8・レインボー16）＋ ここで生まれた子×2
 const SHINE_NINKI = { bronze: 2, silver: 4, gold: 8, rainbow: 16 };
@@ -95,7 +95,7 @@ export function removeExhibit(shop, exId) {
 export function upgradeFacility(shop, f, now = Date.now()) {
   const fac = shop[f], next = fac && LEVELS[fac.level + 1];
   if (!next) return { shop, ok: false, why: "max" };
-  if (ninki(shop, f) < next.need) return { shop, ok: false, why: "ninki" };
+  if (ninki(shop, f) < next.need[f]) return { shop, ok: false, why: "ninki" };
   if (shop.money < next.cost) return { shop, ok: false, why: "nomoney" };
   const s = clone(shop);
   s.money -= next.cost; s.today.expense += next.cost; s[f].level += 1;
@@ -160,7 +160,7 @@ export function zooVisitors(shop, f) {
   if (!f) return zooVisitors(shop, "zoo") + zooVisitors(shop, "aqua");
   return Math.round(ninki(shop, f) * LEVELS[shop[f].level].k); // お客さん＝にんき×だんかいの倍率
 }
-export const zooKeepCost = (shop, f) => (f ? facAnimals(shop, f) : zooAnimals(shop)).length * ZOO_KEEP;
+export const zooKeepCost = (shop, f) => (f ? shop[f].exhibits : allExhibits(shop)).filter(e => e.animals.length).length * ZOO_KEEP;
 
 // 日付が変わったとき（shop.advance から。s は 書きかえてよい写し）：入園料・お給料・寿命・すいぞくかんからの おくりもの
 export function zooDay(s, next) {
